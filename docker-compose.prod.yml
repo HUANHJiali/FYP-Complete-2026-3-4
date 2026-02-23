@@ -1,0 +1,115 @@
+version: '3.8'
+
+# 生产环境 Docker Compose 配置
+# 使用方法: docker-compose -f docker-compose.prod.yml up -d
+
+services:
+  # MySQL 数据库服务（可选：如果使用云数据库，可以删除此服务）
+  db:
+    image: mysql:8.0
+    container_name: fyp_mysql_prod
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change-me}
+      MYSQL_DATABASE: ${DB_NAME:-db_exam}
+      MYSQL_USER: ${DB_USER:-examuser}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-change-me}
+      TZ: Asia/Shanghai
+    volumes:
+      - mysql_data_prod:/var/lib/mysql
+    ports:
+      - "127.0.0.1:3306:3306"  # 只允许本地访问
+    networks:
+      - fyp_network_prod
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+
+  # Django 后端服务
+  backend:
+    build:
+      context: ./source/server
+      dockerfile: ../../docker/backend/Dockerfile
+    container_name: fyp_backend_prod
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      bash -c "
+      echo '等待数据库就绪...' &&
+      sleep 10 &&
+      python manage.py migrate --noinput &&
+      python manage.py init_data &&
+      python manage.py collectstatic --noinput &&
+      gunicorn server.wsgi:application --bind 0.0.0.0:8000 --workers 4 --timeout 120 --access-logfile - --error-logfile -
+      "
+    environment:
+      # 数据库配置
+      DB_HOST: ${DB_HOST:-db}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_NAME: ${DB_NAME:-db_exam}
+      DB_USER: ${DB_USER:-examuser}
+      DB_PASSWORD: ${DB_PASSWORD:-change-me}
+      # Django 配置
+      SECRET_KEY: ${SECRET_KEY}
+      DEBUG: ${DEBUG:-False}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1}
+      # CORS 配置
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost}
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-http://localhost}
+      # AI 配置（可选）
+      ZHIPUAI_API_KEY: ${ZHIPUAI_API_KEY:-}
+      ZHIPUAI_MODEL: ${ZHIPUAI_MODEL:-glm-4-flash}
+      ZHIPUAI_BASE_URL: ${ZHIPUAI_BASE_URL:-https://open.bigmodel.cn/api/paas/v4}
+      # 其他配置
+      PYTHONUNBUFFERED: 1
+    volumes:
+      - ./source/server:/app
+      - static_files_prod:/app/staticfiles
+      - media_files_prod:/app/media
+    ports:
+      - "0.0.0.0:8000:8000"  # 允许外部访问（ALB 需要）
+    networks:
+      - fyp_network_prod
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Vue.js 前端服务（开发模式用于测试）
+  frontend:
+    build:
+      context: ./source/client
+      dockerfile: ../../docker/frontend/Dockerfile
+    container_name: fyp_frontend_prod
+    restart: always
+    depends_on:
+      - backend
+    ports:
+      - "8080:8080"
+    networks:
+      - fyp_network_prod
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  mysql_data_prod:
+    driver: local
+  static_files_prod:
+    driver: local
+  media_files_prod:
+    driver: local
+
+networks:
+  fyp_network_prod:
+    driver: bridge
+

@@ -1,0 +1,16 @@
+[Unit]
+Description=Gunicorn for Intelligent Exam System
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/path/to/FYP2025-main/source/server
+EnvironmentFile=/etc/exam/.env
+ExecStart=/path/to/FYP2025-main/source/server/.venv/bin/gunicorn server.asgi:application -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000 --workers 3 --timeout 120 --graceful-timeout 30 --access-logfile /var/log/exam_gunicorn_access.log --error-logfile /var/log/exam_gunicorn_error.log
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+
+

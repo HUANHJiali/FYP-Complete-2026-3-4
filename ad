@@ -1,0 +1,38 @@
+[33mcommit 17b7581c24a261dc01381f22ce051820bf465376[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m
+Author: Huan HJiali <230180642@stu.vtc.edu.hk>
+Date:   Sun Dec 28 16:36:48 2025 +0800
+
+    修复502错误：添加健康检查端点并更新ALB配置
+
+[33mcommit 52c7d653e50a8c90b76ae36ca7cbcc27936fbe55[m
+Merge: 2883dea fb06748
+Author: Huan HJiali <230180642@stu.vtc.edu.hk>
+Date:   Sun Dec 28 14:20:06 2025 +0800
+
+    Merge branch 'main' of https://github.com/HUANHJiali/FYP2025-12-27
+
+[33mcommit fb06748cdbba0cce81ee5912d0624a2e3eceb1be[m
+Author: HUANHJiali <230180642@stu.vtc.edu.hk>
+Date:   Sun Dec 28 13:59:22 2025 +0800
+
+    Update set-env.ps1
+
+[33mcommit ddfdfac27fd39b95ee2837546909c142e0e420d2[m
+Merge: 547689b 2640a4a
+Author: Huan HJiali <230180642@stu.vtc.edu.hk>
+Date:   Sun Dec 28 13:58:09 2025 +0800
+
+    Merge branch 'main' of https://github.com/HUANHJiali/FYP2025-12-27
+
+[33mcommit 8729cc7fff8cc11c83c8c3550864aec0b703ec79[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m
+Merge: 3611c3e ece2aa7
+Author: Huan HJiali <230180642@stu.vtc.edu.hk>
+Date:   Sun Dec 28 13:39:09 2025 +0800
+
+    Merge branch 'main' of https://github.com/HUANHJiali/25FYP
+
+[33mcommit 3611c3efcb33273af1a1a883506e1168bc2b0914[m
+Author: Huan HJiali <230180642@stu.vtc.edu.hk>
+Date:   Sun Dec 28 13:38:49 2025 +0800
+
+    Fix EC2 auto-deployment: remove interactive input, optimize user_data script, fix port config

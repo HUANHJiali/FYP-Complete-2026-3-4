@@ -1,0 +1,111 @@
+version: '3.8'
+
+services:
+  # MySQL 数据库服务
+  db:
+    image: mysql:8.0
+    container_name: fyp_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: 123456
+      MYSQL_DATABASE: db_exam
+      MYSQL_USER: examuser
+      MYSQL_PASSWORD: exam123456
+      TZ: Asia/Shanghai
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./database/db_exam.sql:/docker-entrypoint-initdb.d/01-structure.sql
+      # - ./database/init_practice_data.sql:/docker-entrypoint-initdb.d/02-init-data.sql
+      - ./database/init_default_users.sql:/docker-entrypoint-initdb.d/03-default-users.sql
+    ports:
+      - "3307:3306"
+    networks:
+      - fyp_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Django 后端服务
+  backend:
+    build:
+      context: ./source/server
+      dockerfile: ../../docker/backend/Dockerfile
+    container_name: fyp_backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      bash -c "
+      echo '等待数据库就绪...' &&
+      sleep 10 &&
+      python manage.py migrate --noinput &&
+      python manage.py collectstatic --noinput || true &&
+      python manage.py runserver 0.0.0.0:8000
+      "
+    environment:
+      # 数据库配置
+      DATABASE_URL: mysql://examuser:exam123456@db:3306/db_exam
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_NAME: db_exam
+      DB_USER: examuser
+      DB_PASSWORD: exam123456
+      # Django 配置
+      # ⚠️ 安全警告：生产环境必须修改以下配置！
+      # 1. DEBUG 必须设置为 "False"
+      # 2. SECRET_KEY 必须使用强随机密钥
+      # 3. 参考 .env.production.example 文件
+      SECRET_KEY: django-insecure-bh^5636f!$(au7fy^nzn()6*4ht974p(&pzcd&9z_**=t%^+^4
+      DEBUG: "True"  # ⚠️ 生产环境改为 "False"
+      ALLOWED_HOSTS: localhost,127.0.0.1,0.0.0.0,backend  # ⚠️ 生产环境改为实际域名
+      # CORS 配置
+      CORS_ALLOWED_ORIGINS: http://localhost:8080,http://127.0.0.1:8080
+      CSRF_TRUSTED_ORIGINS: http://localhost:8080,http://127.0.0.1:8080
+      # AI 配置（可选）
+      ZHIPUAI_API_KEY: ${ZHIPUAI_API_KEY}
+      ZHIPUAI_MODEL: glm-4-flash
+      ZHIPUAI_BASE_URL: https://open.bigmodel.cn/api/paas/v4
+    volumes:
+      - ./source/server:/app
+    ports:
+      - "8000:8000"
+    networks:
+      - fyp_network
+    stdin_open: true
+    tty: true
+
+  # Vue.js 前端服务
+  frontend:
+    build:
+      context: ./source/client
+      dockerfile: ../../docker/frontend/Dockerfile
+    container_name: fyp_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      - VUE_APP_API_BASE_URL=http://localhost:8000
+      - NODE_ENV=development
+    volumes:
+      - ./source/client:/app
+      - /app/node_modules
+    ports:
+      - "8080:8080"
+    networks:
+      - fyp_network
+    stdin_open: true
+    tty: true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  mysql_data:
+    driver: local
+
+networks:
+  fyp_network:
+    driver: bridge

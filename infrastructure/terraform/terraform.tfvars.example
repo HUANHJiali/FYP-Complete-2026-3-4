@@ -1,0 +1,26 @@
+# Terraform 变量配置文件示例
+# 复制此文件为 terraform.tfvars 并填入实际值
+
+aws_region     = "us-east-1"
+instance_type  = "t2.micro"
+key_pair_name  = "fyp-keypair"
+
+# 高可用性配置
+enable_ha = true
+
+# RDS 配置（可选，需要额外预算）
+create_rds      = false
+rds_instance_class = "db.t2.micro"
+db_username     = "examuser"
+db_password     = "YourStrongPassword123!"
+
+# GitHub 仓库
+github_repo_url = "https://github.com/HUANHJiali/FYP2025-12-27.git"
+
+# AWS 凭证（如果使用 AWS Academy Learner Lab）
+# aws_access_key = "your-access-key"
+# aws_secret_key = "your-secret-key"
+
+
+
+

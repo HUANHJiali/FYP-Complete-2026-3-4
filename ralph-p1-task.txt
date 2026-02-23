@@ -1,0 +1,18 @@
+修复剩余的P1级别级联删除检查问题。
+
+请读取 features.json 文件，逐个处理其中的功能：
+
+1. TeachersView.del_info - 添加 PracticePapers 和 Tasks 的关联检查
+2. GradesView.del_info - 添加 Tasks 的关联检查  
+3. ProjectsView.del_info - 添加 PracticePapers 和 Tasks 的关联检查
+4. 运行所有测试确保没有破坏现有功能
+
+工作流程：
+- 一次处理一个功能
+- 修改代码实现级联检查
+- 创建或更新测试验证
+- 当功能验证通过后，将 features.json 中对应功能的 "passes" 字段设为 true
+- **只修改 passes 字段，不要修改 description 或 steps**
+- 继续下一个功能直到所有功能都完成
+
+完成标准：当所有 features 的 "passes" 字段都为 true 且所有测试通过时，输出 <promise>COMPLETE</promise>

@@ -1,0 +1,36 @@
+# Quick setup AWS environment variables
+# For AWS Academy Learner Lab
+# 
+# INSTRUCTIONS:
+# 1. Copy this file to set-env.ps1
+# 2. Fill in your AWS credentials from AWS Academy Learner Lab
+# 3. Never commit set-env.ps1 to Git!
+
+Write-Host "========================================" -ForegroundColor Blue
+Write-Host "Setting AWS Environment Variables" -ForegroundColor Blue
+Write-Host "========================================" -ForegroundColor Blue
+Write-Host ""
+
+# Get credentials from AWS Academy Learner Lab:
+# 1. Go to AWS Academy Learner Lab
+# 2. Click "AWS Details"
+# 3. Click "Show" next to "AWS CLI" or "Credentials"
+# 4. Copy the values below
+
+$env:AWS_ACCESS_KEY_ID="YOUR_ACCESS_KEY_ID_HERE"
+$env:AWS_SECRET_ACCESS_KEY="YOUR_SECRET_ACCESS_KEY_HERE"
+$env:AWS_SESSION_TOKEN="YOUR_SESSION_TOKEN_HERE"
+$env:AWS_DEFAULT_REGION="us-east-1"
+
+Write-Host "AWS environment variables set successfully!" -ForegroundColor Green
+Write-Host ""
+Write-Host "Current configuration:" -ForegroundColor Yellow
+Write-Host "  AWS_ACCESS_KEY_ID: $($env:AWS_ACCESS_KEY_ID.Substring(0,10))..." -ForegroundColor Cyan
+Write-Host "  AWS_DEFAULT_REGION: $env:AWS_DEFAULT_REGION" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "Next steps:" -ForegroundColor Yellow
+Write-Host "  1. Test connection: aws sts get-caller-identity" -ForegroundColor Cyan
+Write-Host "  2. Preview deployment: terraform plan" -ForegroundColor Cyan
+Write-Host "  3. Deploy infrastructure: terraform apply" -ForegroundColor Cyan
+Write-Host ""
+

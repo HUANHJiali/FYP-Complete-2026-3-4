@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Interim Report</title>
+<style>
+  body { font-family: "Times New Roman", "SimSun", serif; line-height: 1.5; font-size: 12pt; }
+  h1, h2, h3, h4 { margin: 0.3em 0; }
+  .center { text-align: center; }
+  .section { margin-top: 18px; }
+  table { border-collapse: collapse; width: 100%; margin-top: 8px; }
+  th, td { border: 1px solid #000; padding: 6px; vertical-align: top; }
+  .small { font-size: 10pt; color: #333; }
+  .page-break { page-break-before: always; }
+  ul { margin: 0; padding-left: 18px; }
+  .shot { border: 1px solid #999; padding: 8px; margin: 10px 0; }
+  .shot img { max-width: 100%; height: auto; display: block; }
+  .caption { font-size: 10pt; color: #444; margin-top: 6px; }
+</style>
+</head>
+<body>
+
+<h2 class="center">Hong Kong Institute of Vocational Education (Lee Wai Lee)</h2>
+<h3 class="center">Department of Information Technology</h3>
+
+<h3>Higher Diploma in Cloud and Data Centre Administration (IT114115/IT314115)</h3>
+<h3>Final Year Project (ITE4116M/ITE4109M) – Interim Report</h3>
+<p>Academic Year XX/XX<br/>Date: Refer to Moodle</p>
+
+<hr/>
+
+<h3>Project Title</h3>
+<p><strong>AI-Powered Learning and Assessment Platform for Practice, Exams and Tasks</strong></p>
+
+<p><strong>Supervisor:</strong> [Name]<br/>
+<strong>Industrial Mentor:</strong> [Name/Company]<br/>
+<strong>Students:</strong> [Student 1], [Student 2], [Student 3], [Student 4]</p>
+
+<hr/>
+
+<p>
+We declare that this is a group project and that no part of this submission has been copied from any other student’s work or from any other source except where due acknowledgement is made explicitly in the text, nor has any part been written for us by another person.
+</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Student</th>
+      <th>Contribution to the project (%)</th>
+      <th>Signature</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>[Student 1]</td><td>[  ]%</td><td>&nbsp;</td></tr>
+    <tr><td>[Student 2]</td><td>[  ]%</td><td>&nbsp;</td></tr>
+    <tr><td>[Student 3]</td><td>[  ]%</td><td>&nbsp;</td></tr>
+    <tr><td>[Student 4]</td><td>[  ]%</td><td>&nbsp;</td></tr>
+  </tbody>
+</table>
+
+<div class="section">
+  <h3>ABSTRACT</h3>
+  <p>
+    In Hong Kong, teachers and students face growing challenges in assessment scale, turnaround time, and personalized feedback. Traditional assessment workflows (manual marking, static question banks) struggle to support large cohorts and continuous practice. Therefore, our project provides an AI-driven solution that accelerates grading, expands high-quality question generation, and forms a closed loop from practice to analytics.
+  </p>
+  <p>
+    Our project implements an end-to-end web platform that integrates:
+  </p>
+  <ul>
+    <li>AI scoring for fill-in-the-blank and programming questions with robust fallback to rule-based marking.</li>
+    <li>AI question generation by subject/topic/difficulty/type.</li>
+    <li>Practice papers, tasks, exams, wrong-question drills, and CSV import/export pipelines.</li>
+  </ul>
+  <p>
+    Users (Admin/Teacher/Student) can manage subjects and questions, generate papers, practice, submit answers, receive AI feedback, and export logs. The main purpose is to increase assessment efficiency and feedback quality with measurable stability and usability improvements.
+  </p>
+</div>
+
+<div class="section">
+  <h3>ACKNOWLEDGEMENT</h3>
+  <ul>
+    <li>Mr./Ms. [Supervisor Name], our Final Year Project Supervisor, for guidance and feedback.</li>
+    <li>[Industrial Mentor/Company], for opinions and practical insights.</li>
+    <li>All classmates and friends who provided testing support and suggestions.</li>
+  </ul>
+</div>
+
+<div class="section">
+  <h3>TABLE OF CONTENTS</h3>
+  <ul>
+    <li>ABSTRACT</li>
+    <li>ACKNOWLEDGEMENT</li>
+    <li>1. Introduction
+      <ul>
+        <li>1.1 Overview</li>
+        <li>1.2 Objectives</li>
+        <li>1.3 Literature Survey</li>
+      </ul>
+    </li>
+    <li>2. Project Background and Problem Analysis
+      <ul>
+        <li>2.1 Scope of the problem</li>
+        <li>2.2 Problem Statements and description</li>
+      </ul>
+    </li>
+    <li>3. Research of Solutions
+      <ul>
+        <li>3.1 Advantages</li>
+        <li>3.2 Limitation</li>
+      </ul>
+    </li>
+    <li>4. Proposed Solution
+      <ul>
+        <li>4.1 Scope of the proposed solution</li>
+        <li>4.2 System Architecture of the proposed system and roles of hardwares</li>
+        <li>4.3 Advantages and drawbacks of the solution</li>
+      </ul>
+    </li>
+    <li>5. Requirements
+      <ul>
+        <li>5.1 Roles of Users</li>
+        <li>5.2 Functional Requirements</li>
+        <li>5.3 Non-functional Requirements</li>
+      </ul>
+    </li>
+    <li>6. Documentation for Problem Analysis
+      <ul>
+        <li>6.1 Use Case Diagrams of the whole systems</li>
+        <li>6.2 Fully Dressed Use Cases</li>
+      </ul>
+    </li>
+    <li>7. Documentation for Detailed Design
+      <ul>
+        <li>7.1 Database design (ERD) and metadata</li>
+        <li>7.2 System design (DFD, Class Diagram, etc.)</li>
+        <li>7.3 User interface design</li>
+      </ul>
+    </li>
+    <li>8. Critical Evaluation
+      <ul>
+        <li>8.1 Problems/difficulties encountered and solutions</li>
+        <li>8.2 Limitations of the proposed system</li>
+      </ul>
+    </li>
+    <li>9. Project Progress and Schedule
+      <ul>
+        <li>9.1 Proposed project schedule update</li>
+        <li>9.2 Completed deliverables and future deliverables</li>
+        <li>9.3 Software tools, facilities and hardware are needed during development</li>
+        <li>9.4 Comparison of development and production environment</li>
+      </ul>
+    </li>
+    <li>10. References</li>
+    <li>Appendices A: Log Book</li>
+  </ul>
+</div>
+
+<div class="section">
+  <h3>1. Introduction</h3>
+  <h4>1.1 Overview</h4>
+  <p>
+    This project delivers a modern assessment platform combining:
+  </p>
+  <ul>
+    <li>Frontend: Vue 3 + Vue Router + Vuex + View UI Plus</li>
+    <li>Backend: Django (RESTful APIs)</li>
+    <li>Database: MySQL</li>
+    <li>AI: OpenAI/OpenRouter (through a unified AI utility)</li>
+    <li>Features: AI scoring, AI question generation, practice papers, tasks, exams, wrong-question practice, CSV import/export, role-based menus</li>
+  </ul>
+  <p>The system targets scalability, faster marking, and better learning experience.</p>
+  <h4>1.2 Objectives</h4>
+  <ul>
+    <li>Provide real AI scoring with traceable feedback and fallback strategies.</li>
+    <li>Enable automatic, domain-adaptive question generation to expand the question bank.</li>
+    <li>Support multi-role workflows: admin/teacher/student with secure token-based access.</li>
+    <li>Ensure stability: unified API responses, robust interceptors, and consistent data types.</li>
+    <li>Deliver a demo-ready platform with clear documentation and quick start scripts.</li>
+  </ul>
+  <h4>1.3 Literature Survey</h4>
+  <ul>
+    <li>AI-assisted marking systems: strengths in speed and feedback; risks in consistency and bias.</li>
+    <li>Item bank management tools: efficient CRUD, batch import/export, metadata management.</li>
+    <li>Practice-to-analytics loop: data-driven learning, wrong-question reinforcement.</li>
+  </ul>
+  <p class="small">
+    1.3.1 AI marking best practices and fallback scoring strategies; 1.3.2 Question generation prompts and validation heuristics; 1.3.3 UX for practice flows and transparency
+  </p>
+</div>
+
+<div class="section">
+  <h3>2. Project Background and Problem Analysis</h3>
+  <h4>2.1 Scope of the problem</h4>
+  <ul>
+    <li>Large cohorts create heavy marking load and slow feedback cycles.</li>
+    <li>Limited high-quality question supply for continuous practice.</li>
+    <li>Fragmented systems hinder a closed practice–feedback–analytics loop.</li>
+  </ul>
+  <h4>2.2 Problem Statements and description</h4>
+  <p>
+    In Hong Kong, rapid curriculum delivery and assessment workloads increase pressure on teachers and students. Manual marking delays learning feedback and makes personalization difficult. Therefore, our project provides an AI-enhanced assessment workflow to shorten cycles and improve learning outcomes. The purpose is to integrate AI scoring and AI question generation into an end-to-end system where users can manage, practice, receive feedback, and analyze performance continuously.
+  </p>
+</div>
+
+<div class="section">
+  <h3>3. Research of Solutions</h3>
+  <h4>3.1 Advantages</h4>
+  <ul>
+    <li>AI scoring accelerates marking and provides explanatory feedback.</li>
+    <li>AI question generation expands question supply and supports topic/difficulty control.</li>
+    <li>Wrong-question focused practice reinforces weak areas efficiently.</li>
+  </ul>
+  <h4>3.2 Limitation</h4>
+  <ul>
+    <li>AI responses can vary; need strict prompts and fallbacks.</li>
+    <li>Programming questions require safe sandboxing and resource limits.</li>
+    <li>Full analytics and long-term evaluation require more data and iteration.</li>
+  </ul>
+</div>
+
+<div class="section">
+  <h3>4. Proposed Solution</h3>
+  <h4>4.1 Scope of the proposed solution</h4>
+  <ul>
+    <li>Multi-role platform with subjects, questions, papers, tasks, and logs.</li>
+    <li>AI scoring for fill-in-the-blank and programming; rule-based fallback.</li>
+    <li>AI question generation by parameters; CSV import/export pipelines.</li>
+    <li>Wrong-question drill paper generation and practice detail exports.</li>
+  </ul>
+  <h4>4.2 System Architecture and roles of hardwares</h4>
+  <ul>
+    <li>Client (Vue 3): UI/UX, routing, state, axios interceptors</li>
+    <li>Server (Django): REST API, business logic, AI endpoints, CSV processing</li>
+    <li>Database (MySQL): persistent storage</li>
+    <li>Optional (Future): Dockerized sandbox runner, Redis/Celery</li>
+    <li>Deployment: Linux VM or containerized stack; Nginx reverse proxy</li>
+  </ul>
+  <h4>4.3 Advantages and drawbacks</h4>
+  <ul>
+    <li>Advantages: Fast feedback loop, closed-loop learning, extendable architecture</li>
+    <li>Drawbacks: AI consistency challenges; requires careful ops for sandbox/queue</li>
+  </ul>
+</div>
+
+<div class="section">
+  <h3>5. Requirements</h3>
+  <h4>5.1 Roles of Users</h4>
+  <ul>
+    <li>Admin: manage colleges/grades/subjects/users/exams/messages; AI features</li>
+    <li>Teacher: manage questions/exams; AI question generation</li>
+    <li>Student: practice/tasks/exams; AI scoring access; wrong-question drills</li>
+  </ul>
+  <h4>5.2 Functional Requirements</h4>
+  <ul>
+    <li>Authentication with token; role-based menus</li>
+    <li>Question CRUD; CSV import/export; templates</li>
+    <li>Practice paper listing, start/continue/submit; results and exports</li>
+    <li>AI scoring and AI question generation endpoints and UI</li>
+    <li>Wrong-question paper generation</li>
+  </ul>
+  <h4>5.3 Non-functional Requirements</h4>
+  <ul>
+    <li>Reliability: clear error handling, interceptors, fallbacks</li>
+    <li>Performance: pagination, async requests</li>
+    <li>Usability: filterable selects, consistent value types, progress feedback</li>
+    <li>Security: token checks, safe file uploads</li>
+    <li>Maintainability: modular code, unified API contract</li>
+  </ul>
+</div>
+
+<div class="section">
+  <h3>6. Documentation for Problem Analysis</h3>
+  <h4>6.1 Use Case Diagrams of the whole systems</h4>
+  <p>Admin: manage users/subjects/questions/exams; import/export; AI generate.<br/>
+     Teacher: manage questions/exams; AI generate; review logs.<br/>
+     Student: browse papers; start/continue/submit; view results; AI scoring; wrong-question practice.</p>
+  <h4>6.2 Fully Dressed Use Cases</h4>
+  <p><strong>Scope/System:</strong> Web platform; <strong>Name:</strong> Start a practice; <strong>Primary Actor:</strong> Student.</p>
+  <p><strong>Main Success Scenario:</strong> select paper → create/continue log → answer → submit → score & store → result.</p>
+  <p><strong>Extensions:</strong> continue unfinished; retry on network error.</p>
+  <p><strong>Scope/System:</strong> Web platform; <strong>Name:</strong> Import questions (CSV); <strong>Primary Actor:</strong> Admin/Teacher.</p>
+  <p><strong>Main Success Scenario:</strong> upload CSV → validate → store → return success/fail summary.</p>
+</div>
+
+<div class="section">
+  <h3>7. Documentation for Detailed Design</h3>
+  <h4>7.1 Database design (ERD) and metadata</h4>
+  <p>Core entities: Users, Projects, Grades, Colleges, Practises, Options, PracticePapers, StudentPracticeLogs, StudentPracticeAnswers, Tasks, StudentTaskLogs, StudentTaskAnswers, Exams, ExamLogs, AnswerLogs, Messages, MessageReads, WrongQuestions, WrongQuestionReviews.</p>
+  <p>Key fields example: Practises(id,name,answer,analyse,type(0/1/2/3),project_id,score)</p>
+  <h4>7.2 System design</h4>
+  <p>Client calls REST APIs via axios; interceptors unify code==0 semantics. Server views: AdminView, StudentPracticeView, AIView. AIUtils: prompt building, model calls, parsing, fallback.</p>
+  <h4>7.3 User interface design</h4>
+  <p>Dashboards with tags by difficulty/type; filterable lists; progress indicators on AI calls with retry.</p>
+</div>
+
+<div class="section">
+  <h3>7.4 Key Screens (Screenshots)</h3>
+
+  <h4>7.4.1 Administrator Screens</h4>
+  <div class="shot">
+    <img src="/screens/dashboard-admin.jpg" alt="Admin Dashboard" />
+    <div class="caption"><strong>系统首页（管理员）</strong>：系统信息、日历与欢迎面板。左侧为功能导航（学院/班级/学生/教师/考试/AI）。</div>
+  </div>
+  <div class="shot">
+    <img src="/screens/college-management.jpg" alt="College Management" />
+    <div class="caption"><strong>学院信息管理</strong>：学院信息增删改查（管理员）。</div>
+  </div>
+  <div class="shot">
+    <img src="/screens/class-management.jpg" alt="Class Management" />
+    <div class="caption"><strong>班级信息管理</strong>：班级增删改查（管理员）。</div>
+  </div>
+  <div class="shot">
+    <img src="/screens/subject-management.jpg" alt="Subject Management" />
+    <div class="caption"><strong>考试科目管理</strong>：学科（项目）列表管理（管理员/教师）。</div>
+  </div>
+  <div class="shot">
+    <img src="/screens/student-management.jpg" alt="Student Management" />
+    <div class="caption"><strong>学生信息管理</strong>：学生基础信息维护（管理员）。</div>
+  </div>
+  <div class="shot">
+    <img src="/screens/teacher-management.jpg" alt="Teacher Management" />
+    <div class="caption"><strong>教师信息管理</strong>：教师资料维护（管理员）。</div>
+  </div>
+  <div class="shot">
+    <img src="/screens/question-bank.jpg" alt="Question Bank" />
+    <div class="caption"><strong>题库管理</strong>：题库列表、CSV 导入/导出与模板（管理员/教师）。</div>
+  </div>
+  <div class="shot">
+    <img src="/screens/exam-management-1.jpg" alt="Exam Management" />
+    <div class="caption"><strong>考试管理</strong>：按名称/班级/科目筛选，创建与管理考试（管理员/教师）。</div>
+  </div>
+  <div class="shot">
+    <img src="/screens/ai-generate.jpg" alt="AI Question Generator" />
+    <div class="caption"><strong>AI生成题目</strong>：按科目/主题/题型/难度生成题目（管理员/教师）。</div>
+  </div>
+
+  <h4>7.4.2 Teacher Screens</h4>
+  <div class="shot">
+    <img src="/screens/paper-review.jpg" alt="Paper Review" />
+    <div class="caption"><strong>试卷审核</strong>：教师对填空/编程题审核并发布成绩。</div>
+  </div>
+  <div class="shot">
+    <img src="/screens/exam-management-2.jpg" alt="Exam Management (School)" />
+    <div class="caption"><strong>校级考试管理</strong>：教务/校级管理员总览考试安排状态。</div>
+  </div>
+  <div class="shot">
+    <img src="/screens/ai-scoring.jpg" alt="AI Scoring" />
+    <div class="caption"><strong>AI评分</strong>：输入题干/答案获取分数与反馈（教师/学生自评）。</div>
+  </div>
+
+  <h4>7.4.3 Student Screens</h4>
+  <div class="shot">
+    <img src="/screens/login.jpg" alt="Login" />
+    <div class="caption"><strong>登录页</strong>：登录后进入对应角色工作台。</div>
+  </div>
+  <div class="shot">
+    <img src="/screens/exam-list-student.jpg" alt="Exam List Student" />
+    <div class="caption"><strong>考试安排（学生）</strong>：学生侧考试列表与进度。</div>
+  </div>
+  <div class="shot">
+    <img src="/screens/practice-papers.jpg" alt="Practice Papers" />
+    <div class="caption"><strong>练习试卷</strong>：筛选、开始/继续、错题专项与导出练习记录。</div>
+  </div>
+  <div class="shot">
+    <img src="/screens/task-center.jpg" alt="Task Center" />
+    <div class="caption"><strong>任务中心</strong>：查看任务并进入作答，跟踪完成情况。</div>
+  </div>
+  <div class="shot">
+    <img src="/screens/message-center.jpg" alt="Message Center" />
+    <div class="caption"><strong>消息中心</strong>：查看通知、标记已读、查看详情。</div>
+  </div>
+  <div class="shot">
+    <img src="/screens/activity-feed.jpg" alt="Activity Feed" />
+    <div class="caption"><strong>个人动态</strong>：学习活动时间线与过滤。</div>
+  </div>
+  <div class="shot">
+    <img src="/screens/profile.jpg" alt="Profile" />
+    <div class="caption"><strong>个人信息</strong>：资料编辑、头像上传与修改密码。</div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>7.5 Code Highlights for Screens</h3>
+  <p class="small">为每张功能截图补充对应的核心代码与说明，便于评审快速定位实现位置。</p>
+
+  <h4>考试管理（列表/筛选/添加）</h4>
+  <div class="shot">
+    <div class="caption"><strong>说明</strong>：按名称/班级/科目筛选；管理员可添加考试；学生侧显示“开始/等待/结束”。</div>
+    <pre class="small"><code>client/src/views/pages/exams.vue
+// 列表加载与状态计算
+getPageExams(...).then(resp => {
+  const list = (resp.data || {}).data || [];
+  list.forEach(item => { item.status = contrastNow(item.examTime); });
+  this.pageInfos = list;
+});
+
+// 开始考试跳转
+addExamLog({ token: this.$store.state.token, examId: id }).then(() => {
+  this.$router.push({ path: 'answer', query: { id } });
+});
+</code></pre>
+  </div>
+
+  <h4>学院信息管理</h4>
+  <div class="shot">
+    <div class="caption"><strong>说明</strong>：学院信息增删改查。</div>
+    <pre class="small"><code>client/src/views/pages/colleges.vue
+getPageColleges(pageIndex, pageSize, this.qryForm.name).then(resp => {
+  this.pageInfos = resp.data.data;
+  this.totalInfo = resp.data.count;
+  this.loading = false;
+});
+</code></pre>
+  </div>
+
+  <h4>题库管理（CSV 导入/导出/模板）</h4>
+  <div class="shot">
+    <div class="caption"><strong>说明</strong>：题库列表、筛选；CSV 导入/导出；创建/编辑题目；统一题型 0/1/2/3。</div>
+    <pre class="small"><code>client/src/views/pages/adminQuestions.vue
+// 导出 CSV
+const resp = await exportAdminQuestions(filters);
+const blob = new Blob([resp.data || resp], { type: 'text/csv;charset=utf-8;' });
+
+// 导入 CSV
+const fd = new FormData(); fd.append('file', file); fd.append('subjectId', this.searchProject || '');
+const resp = await importAdminQuestions(fd);
+
+// 新增题目载荷（选择题附 options/correctOptions）
+const payload = { name, type, subjectId: this.formData.project, answer, analyse };
+if (this.formData.type === 0) {
+  payload['options[]'] = this.formData.options.map(o => o.content);
+  payload['correctOptions[]'] = this.formData.options
+    .map((o, i) => (o.isCorrect ? String(i) : null))
+    .filter(i => i !== null);
+}
+</code></pre>
+  </div>
+
+  <h4>考试科目/班级信息管理</h4>
+  <div class="shot">
+    <div class="caption"><strong>说明</strong>：基础字典 CRUD。</div>
+    <pre class="small"><code>client/src/views/pages/projects.vue
+getPageProjects(...).then(resp => { this.pageInfos = resp.data.data; this.totalInfo = resp.data.count; });
+
+client/src/views/pages/grades.vue
+getPageGrades(...).then(resp => { this.pageInfos = resp.data.data; this.totalInfo = resp.data.count; });
+</code></pre>
+  </div>
+
+  <h4>学生/教师信息管理</h4>
+  <div class="shot">
+    <div class="caption"><strong>说明</strong>：学生按学院/班级筛选；教师按职称/学历筛选；支持新增/编辑。</div>
+    <pre class="small"><code>client/src/views/pages/students.vue
+getPageStudents(pageIndex, pageSize, this.qryForm.name, this.qryForm.collegeId, this.qryForm.gradeId)
+  .then(resp => { this.pageInfos = resp.data.data; this.totalInfo = resp.data.count; });
+
+client/src/views/pages/teachers.vue
+getPageTeachers(pageIndex, pageSize, this.qryForm.name, this.qryForm.record, this.qryForm.job)
+  .then(resp => { this.pageInfos = resp.data.data; this.totalInfo = resp.data.count; });
+</code></pre>
+  </div>
+
+  <h4>试卷审核（教师）</h4>
+  <div class="shot">
+    <div class="caption"><strong>说明</strong>：填空/编程题审核与发布成绩。</div>
+    <pre class="small"><code>client/src/views/pages/teacherExamLogs.vue
+// 打开审核（填空题）
+showAuditWin_1(row){ this.answersForm = { studentId: row.studentId, type: 1, examId: row.examId };
+  getAnswers(row.studentId, 1, row.examId).then(resp => { this.ansers_1 = resp.data; this.showAuditFlag_1 = true; });
+}
+
+// 审核/刷新
+aduitAnswerLog({ id, type, flag }).then(() => {
+  getAnswers(this.answersForm.studentId, this.answersForm.type, this.answersForm.examId).then(resp => {
+    this.ansers_1 = resp.data; // 或 this.ansers_2
+  });
+});
+</code></pre>
+  </div>
+
+  <h4>AI 生成题目 / AI 评分</h4>
+  <div class="shot">
+    <div class="caption"><strong>说明</strong>：前端带重试与进度文案；后端统一 code==0。</div>
+    <pre class="small"><code>client/src/components/AIQuestionGenerator.vue
+const response = await withRetry(() => http.post('/ai/generate_questions/', {
+  subject, topic, questionType: parseInt(formData.questionType), difficulty, count: parseInt(formData.count)
+}));
+
+client/src/components/AIScoring.vue
+const response = await withRetry(() => http.post('/ai/score_answer/', {
+  questionContent, questionType: parseInt(formData.questionType), correctAnswer, studentAnswer, maxScore: parseFloat(formData.maxScore)
+}));
+</code></pre>
+  </div>
+
+  <h4>任务中心（学生）</h4>
+  <div class="shot">
+    <div class="caption"><strong>说明</strong>：开始/继续任务，跳转答题。</div>
+    <pre class="small"><code>client/src/views/pages/taskCenter.vue
+startTask(token, task.id).then(resp => {
+  this.$router.push({ path: '/answer', query: { type: 'task', taskId: task.id, logId: resp.data.logId } });
+});
+</code></pre>
+  </div>
+
+  <h4>练习试卷（学生端）</h4>
+  <div class="shot">
+    <div class="caption"><strong>说明</strong>：筛选、开始/继续、错题专项、导出练习记录。</div>
+    <pre class="small"><code>client/src/views/pages/practises.vue
+const response = await apiStartPractice(token, paper.id);
+if (response.code === 0) { this.currentPracticeLog = response.data.logId; this.initializePractice(paper); }
+
+const resp = await generateWrongPracticePaper(token, this.wrongForm.projectId || null, this.wrongForm.limit || 10);
+</code></pre>
+  </div>
+
+  <h4>消息中心 / 个人动态 / 个人信息</h4>
+  <div class="shot">
+    <div class="caption"><strong>说明</strong>：消息筛选与已读；时间线过滤；资料编辑与改密。</div>
+    <pre class="small"><code>client/src/views/pages/messageCenter.vue
+this.messages.forEach(m => { m.isRead = true; }); // 全部已读
+
+client/src/views/pages/personalDynamics.vue
+// 过滤类型与日期范围 → this.filteredActivities = filtered;
+
+client/src/views/pages/studentProfile.vue
+const response = await updSessionInfo(params); if (response.code === 0) { await this.loadUserInfo(); }
+const response2 = await updSessionPwd(params); if (response2.code === 0) { this.$refs.passwordForm.resetFields(); }
+</code></pre>
+  </div>
+</div>
+
+<div class="section">
+  <h3>7.6 角色视角的代码详解（管理员 Admin）</h3>
+  <h4>7.6.1 题库管理：创建/编辑/导入/导出</h4>
+  <p>题库管理页面负责题目 CRUD 与批量导入导出，并统一题型值为数字 0/1/2/3。以下为关键实现：</p>
+  <pre class="small"><code>client/src/views/pages/adminQuestions.vue
+// 加载题目与分页
+async loadQuestions() {
+  this.loading = true
+  try {
+    const response = await getAdminQuestions({
+      page: this.pagination.current,
+      pageSize: this.pagination.pageSize,
+      keyword: this.searchKeyword,
+      type: this.searchType,
+      project: this.searchProject
+    })
+    if (response.code === 0) {
+      this.questions = response.data.list
+      this.pagination.total = response.data.total
+    } else {
+      this.$Message.error(response.msg || '加载题目列表失败')
+    }
+  } finally { this.loading = false }
+}
+
+// 选择题校验（不能为空，且单选仅一个正确选项）
+validateOptions() {
+  const hasEmpty = this.formData.options.some(o => !o.content.trim())
+  if (hasEmpty) { this.$Message.warning('请填写所有选项内容'); return false }
+  const correctCount = this.getCorrectOptionsCount()
+  if (correctCount === 0) { this.$Message.warning('请至少选择一个正确答案'); return false }
+  if (this.formData.type === 0 && correctCount > 1) {
+    this.$Message.warning('单选题只能有一个正确答案'); return false
+  }
+  return true
+}
+
+// 新增题目载荷（与后端字段对齐：subjectId/answer/analyse）
+async handleSubmit() {
+  const valid = await this.$refs.formRef.validate(); if (!valid) return
+  if ([0].includes(this.formData.type)) { if (!this.validateOptions()) return }
+  if ([1,2,3].includes(this.formData.type) && !this.formData.correctAnswer) {
+    this.$Message.warning('请输入正确答案'); return
+  }
+  let response
+  if (this.isEdit) {
+    response = await updateAdminQuestion(this.formData)
+  } else {
+    const payload = {
+      name: this.formData.name,
+      type: this.formData.type,
+      subjectId: this.formData.project,
+      answer: this.formData.correctAnswer,
+      analyse: this.formData.analysis,
+    }
+    if (this.formData.type === 0) {
+      payload['options[]'] = this.formData.options.map(o => o.content)
+      payload['correctOptions[]'] = this.formData.options
+        .map((o, i) => (o.isCorrect ? String(i) : null)).filter(i => i !== null)
+    }
+    response = await addAdminQuestion(payload)
+  }
+  if (response.code === 0) { this.$Message.success(this.isEdit ? '编辑成功' : '创建成功'); this.showModal=false; this.loadQuestions() }
+}
+
+// 批量导入（CSV）
+async beforeImport(file) {
+  const fd = new FormData(); fd.append('file', file); fd.append('subjectId', this.searchProject || '')
+  const resp = await importAdminQuestions(fd)
+  if (resp.code === 0) { this.$Message.success(`导入完成：成功 ${resp.data.created} 条，失败 ${resp.data.failed.length} 条`); this.loadQuestions() }
+  return false
+}
+
+// 批量导出（CSV）
+async exportCsv() {
+  const filters = { subjectId: this.searchProject || '', search: this.searchKeyword || '', questionType: this.searchType !== '' ? this.searchType : '' }
+  const resp = await exportAdminQuestions(filters)
+  const blob = new Blob([resp.data || resp], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob); const a = document.createElement('a')
+  a.href = url; a.download = 'questions_export.csv'; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url)
+}
+</code></pre>
+  <p><strong>要点</strong>：</p>
+  <ul>
+    <li><strong>类型统一</strong>：前端用数字 0/1/2/3 表示题型，避免字符串匹配带来的后端不兼容。</li>
+    <li><strong>选项校验</strong>：选择题必须至少一个正确选项；单选题最多一个正确选项。</li>
+    <li><strong>CSV I/O</strong>：上传使用 FormData，下载用 Blob + a.click 触发保存。</li>
+  </ul>
+
+  <h4>7.6.2 后端 URL 与视图入口</h4>
+  <pre class="small"><code>server/app/urls.py
+urlpatterns = [
+  path('admin/&lt;str:module&gt;/', app.views.AdminView.as_view()),
+  # ... 其他模块
+]
+</code></pre>
+  <p>后端以统一风格路由分发至 `AdminView`，通过 `module` 子路径区分列表/新增/更新/删除/导入/导出等子动作，返回体遵循 `BaseView.successData` 的 `{ code:0, msg, data }` 约定。</p>
+
+  <h4>7.6.3 关联数据模型（简要）</h4>
+  <pre class="small"><code>server/app/models.py
+class Practises(models.Model):
+  id = models.AutoField(primary_key=True)
+  name = models.CharField(max_length=64)
+  answer = models.TextField()
+  analyse = models.TextField()
+  type = models.IntegerField()  # 0/1/2/3
+  createTime = models.CharField(max_length=19, db_column='create_time')
+  project = models.ForeignKey(Projects, on_delete=models.CASCADE, db_column="project_id")
+
+class Options(models.Model):
+  id = models.AutoField(primary_key=True)
+  name = models.CharField(max_length=64)
+  practise = models.ForeignKey(Practises, on_delete=models.CASCADE, db_column="practise_id")
+</code></pre>
+  <p>题目与选项通过 `Options.practise` 关联。注意 `Practises` 已移除历史上的 `score` 字段，分值在不同业务（如试卷、任务）由关联表提供。</p>
+</div>
+
+<div class="section">
+  <h3>7.7 角色视角的代码详解（教师 Teacher）</h3>
+  <h4>7.7.1 考试审核与成绩发布</h4>
+  <pre class="small"><code>client/src/views/pages/teacherExamLogs.vue
+// 打开填空题审核
+showAuditWin_1(row){
+  this.answersForm = { studentId: row.studentId, type: 1, examId: row.examId };
+  getAnswers(row.studentId, 1, row.examId).then(resp => {
+    this.ansers_1 = resp.data; this.showAuditFlag_1 = true;
+  });
+}
+
+// 打开编程题审核
+showAuditWin_2(row){
+  this.answersForm = { studentId: row.studentId, type: 3, examId: row.examId };
+  getAnswers(row.studentId, 3, row.examId).then(resp => {
+    this.ansers_2 = resp.data; this.showAuditFlag_2 = true;
+  });
+}
+
+// 审核单题（正确/错误），随后刷新列表
+auditLog(id, type, flag){
+  this.$Modal.confirm({ title: '系统提示', content: '提交之后结果将无法修改，是否继续?', onOk: () => {
+    aduitAnswerLog({ id, type, flag }).then(() => {
+      getAnswers(this.answersForm.studentId, this.answersForm.type, this.answersForm.examId).then(resp => {
+        if(type == 1){ this.ansers_1 = resp.data } else { this.ansers_2 = resp.data }
+      });
+      this.$Notice.success({ duration: 3, title: '审核成功' });
+    });
+  }});
+}
+
+// 成绩发布前检查是否还有待审题型
+putScore(row){
+  checkAnswers(row.studentId, row.examId).then(resp => {
+    if(resp.data.flag){
+      this.$Notice.warning({ title: '填空或编程未完全审核，不能发布成绩' });
+    } else {
+      this.$Modal.confirm({ title: '系统提示', content: '发布后无法修改，是否继续?', onOk: () => {
+        putExamLog({ studentId: row.studentId, examId: row.examId }).then(() => {
+          this.getPageInfo(1, this.pageSize);
+          this.$Notice.success({ title: '发布成绩成功' });
+        })
+      }});
+    }
+  });
+}
+</code></pre>
+  <p><strong>要点</strong>：</p>
+  <ul>
+    <li><strong>类型审核</strong>：以 `type=1/3` 区分填空/编程审核清单。</li>
+    <li><strong>不可逆提示</strong>：审核提交、成绩发布均使用二次确认。</li>
+    <li><strong>发布前校验</strong>：后端 `checkAnswers` 返回 `flag` 表示是否仍有待审项。</li>
+  </ul>
+</div>
+
+<div class="section">
+  <h3>7.8 角色视角的代码详解（学生 Student）</h3>
+  <h4>7.8.1 练习试卷：开始/继续/错题专项/导出</h4>
+  <pre class="small"><code>client/src/views/pages/practises.vue
+// 开始练习（若后端提示继续，则弹窗继续）
+async startPractice(paper) {
+  const token = this.$store.state.token || sessionStorage.getItem('token');
+  const response = await apiStartPractice(token, paper.id);
+  if (response.code === 0) {
+    this.currentPracticeLog = response.data.logId;
+    if (response.data && response.data.message === '继续现有练习') {
+      this.$Modal.confirm({ title: '继续练习', content: '检测到您有未完成的练习，是否继续？', onOk: () => this.continuePractice(paper) });
+    } else { this.initializePractice(paper) }
+  }
+}
+
+// 基于错题本生成专项练习
+async generateWrong() {
+  const token = this.$store.state.token || sessionStorage.getItem('token');
+  const resp = await generateWrongPracticePaper(token, this.wrongForm.projectId || null, this.wrongForm.limit || 10);
+  if (resp.code === 0) {
+    const start = await apiStartPractice(token, resp.data.paperId)
+    if (start.code === 0) {
+      this.currentPracticeLog = start.data.logId
+      this.$router.push({ name: 'answer', query: { type: 'practice', paperId: resp.data.paperId, mode: 'fixed', logId: this.currentPracticeLog } })
+    }
+  }
+}
+
+// 导出练习记录（CSV）
+async downloadPracticeLogs(){
+  const token = this.$store.state.token || sessionStorage.getItem('token');
+  const resp = await exportPracticeLogs(token)
+  const blob = new Blob([resp.data || resp], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob); const a = document.createElement('a')
+  a.href = url; a.download = 'practice_logs.csv'; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url)
+}
+</code></pre>
+  <h4>7.8.2 练习结果详情与答题明细导出</h4>
+  <pre class="small"><code>client/src/views/pages/practiceResult.vue
+// 加载练习答案，计算统计
+const response = await getPracticeAnswers(this.logId);
+if (response.code === 0) { this.answers = response.data; this.calculateResult(); }
+
+// 导出答题明细（CSV）
+const resp = await exportPracticeAnswers(this.logId)
+const blob = new Blob([resp.data || resp], { type: 'text/csv;charset=utf-8;' })
+</code></pre>
+
+  <h4>7.8.3 任务中心：开始/继续任务</h4>
+  <pre class="small"><code>client/src/views/pages/taskCenter.vue
+// 学生任务列表加载
+getStudentTasks(token).then(resp => { if (resp.code === 0) { this.tasks = resp.data; } })
+
+// 开始任务 → 跳转答题
+startTask(token, task.id).then(resp => {
+  if (resp.code === 0) {
+    this.$router.push({ path: '/answer', query: { type: 'task', taskId: task.id, logId: resp.data.logId } })
+  }
+})
+</code></pre>
+</div>
+
+<div class="section">
+  <h3>7.9 后端核心实现（Django）</h3>
+  <h4>7.9.1 统一响应体与分页结构</h4>
+  <pre class="small"><code>server/comm/BaseView.py
+class BaseView(View):
+  def parasePage(pageIndex, pageSize, pageTotal, count, data):
+    return {'pageIndex': pageIndex, 'pageSize': pageSize, 'pageTotal': pageTotal, 'count': count, 'data': data}
+  def success(msg='处理成功'):
+    return HttpResponse(json.dumps({'code': 0, 'msg': msg}), content_type='application/json; charset=utf-8')
+  def successData(data, msg='处理成功'):
+    return HttpResponse(json.dumps({'code': 0, 'msg': msg, 'data': data}), content_type='application/json; charset=utf-8')
+  def warn(msg='操作异常，请重试'):
+    return HttpResponse(json.dumps({'code': 1, 'msg': msg}), content_type='application/json; charset=utf-8')
+  def error(msg='系统异常'):
+    return HttpResponse(json.dumps({'code': 2, 'msg': msg}), content_type='application/json; charset=utf-8')
+</code></pre>
+  <p>所有视图均应返回 `code==0` 代表成功，前端拦截器据此统一处理状态与消息。</p>
+
+  <h4>7.9.2 URL 路由总览</h4>
+  <pre class="small"><code>server/app/urls.py
+urlpatterns = [
+  path('&lt;str:module&gt;/', app.views.SysView.as_view()),
+  path('colleges/&lt;str:module&gt;/', app.views.CollegesView.as_view()),
+  path('grades/&lt;str:module&gt;/', app.views.GradesView.as_view()),
+  path('projects/&lt;str:module&gt;/', app.views.ProjectsView.as_view()),
+  path('students/&lt;str:module&gt;/', app.views.StudentsView.as_view()),
+  path('teachers/&lt;str:module&gt;/', app.views.TeachersView.as_view()),
+  path('practises/&lt;str:module&gt;/', app.views.PractisesView.as_view()),
+  path('options/&lt;str:module&gt;/', app.views.OptionsView.as_view()),
+  path('exams/&lt;str:module&gt;/', app.views.ExamsView.as_view()),
+  path('examlogs/&lt;str:module&gt;/', app.views.ExamLogsView.as_view()),
+  path('answerlogs/&lt;str:module&gt;/', app.views.AnswerLogsView.as_view()),
+  path('practicepapers/&lt;str:module&gt;/', app.views.PracticePapersView.as_view()),
+  path('studentpractice/&lt;str:module&gt;/', app.views.StudentPracticeView.as_view()),
+  path('tasks/&lt;str:module&gt;/', app.views.TasksView.as_view()),
+  path('wrongquestions/&lt;str:module&gt;/', app.views.WrongQuestionsView.as_view()),
+  path('admin/&lt;str:module&gt;/', app.views.AdminView.as_view()),
+  path('ai/&lt;str:module&gt;/', app.views.AIView.as_view()),
+]
+</code></pre>
+  <p>AI 相关接口通过 `ai/&lt;module&gt;` 统一暴露（如 `score_answer/`、`generate_questions/`）。</p>
+
+  <h4>7.9.3 试卷与练习：数量校验与随机组卷</h4>
+  <pre class="small"><code>server/comm/ExamUtils.py
+class CheckPractiseTotal():
+  def check(projectId):
+    data_0 = CheckPractiseTotal.qryPractises(0, projectId)  # 选择题
+    data_1 = CheckPractiseTotal.qryPractises(1, projectId)  # 填空题
+    data_2 = CheckPractiseTotal.qryPractises(2, projectId)  # 判断题
+    data_3 = CheckPractiseTotal.qryPractises(3, projectId)  # 编程题
+    return (CheckPractiseTotal.check_0(data_0) & CheckPractiseTotal.check_1(data_1)
+            & CheckPractiseTotal.check_2(data_2) & CheckPractiseTotal.check_3(data_3))
+
+class MakeExam():
+  def make(projectId):
+    data_0 = MakeExam.qryPractises(0, projectId)
+    data_1 = MakeExam.qryPractises(1, projectId)
+    data_2 = MakeExam.qryPractises(2, projectId)
+    data_3 = MakeExam.qryPractises(3, projectId)
+    nums_0 = MakeExam.make_0(data_0)
+    nums_1 = MakeExam.make_1(data_1)
+    nums_2 = MakeExam.make_2(data_2)
+    nums_3 = MakeExam.make_3(data_3)
+    return {'item_0': nums_0, 'item_1': nums_1, 'item_2': nums_2, 'item_3': nums_3}
+</code></pre>
+  <p>该工具类用于生成随机题号集合与校验科目题量是否足够，避免发布后出现“题量不足”导致的运行时异常。</p>
+
+  <h4>7.9.4 练习/任务/错题 核心模型</h4>
+  <pre class="small"><code>server/app/models.py
+class StudentPracticeLogs(models.Model):
+  student = models.ForeignKey(Users, on_delete=models.CASCADE, db_column='student_id', to_field='id')
+  paper = models.ForeignKey(PracticePapers, on_delete=models.CASCADE, db_column='paper_id')
+  startTime = models.CharField(max_length=19, db_column='start_time')
+  endTime = models.CharField(max_length=19, db_column='end_time', null=True)
+  score = models.FloatField(default=0.0)
+  accuracy = models.FloatField(default=0.0)
+  status = models.CharField(max_length=20, default='in_progress')
+
+class StudentPracticeAnswers(models.Model):
+  practiceLog = models.ForeignKey(StudentPracticeLogs, on_delete=models.CASCADE, db_column='practice_log_id')
+  practise = models.ForeignKey(Practises, on_delete=models.CASCADE, db_column='practise_id')
+  studentAnswer = models.TextField(null=True)
+  isCorrect = models.BooleanField(null=True)
+  score = models.FloatField(default=0.0)
+
+class WrongQuestions(models.Model):
+  student = models.ForeignKey(Users, on_delete=models.CASCADE, db_column='student_id', to_field='id')
+  practise = models.ForeignKey(Practises, on_delete=models.CASCADE, db_column='practise_id')
+  source = models.CharField(max_length=20)  # task/exam/practice
+  wrongAnswer = models.TextField(null=True)
+  correctAnswer = models.TextField(null=True)
+  analysis = models.TextField(null=True)
+</code></pre>
+  <p>错题记录用于支撑“错题专项”再练；日志与答案模型支撑“继续练习/统计/导出”。</p>
+</div>
+
+<div class="section">
+  <h3>7.10 前端核心实现（Vue + Axios）</h3>
+  <h4>7.10.1 Axios 拦截器与统一错误处理</h4>
+  <pre class="small"><code>client/src/utils/http.js
+// POST：非 FormData 默认 qs.stringify；下载/纯文本直接透传
+// 响应：code==0/1 正常返回；其他弹出 Notice；/exit/ 静默处理
+service.interceptors.response.use(
+  success => {
+    if (typeof success.data === 'string' || success.request?.responseType === 'blob') return success
+    if (success.data.code == 0 || success.data.code == 1) return success.data
+    const url = success?.config?.url || ''
+    if (url.includes('/exit/')) { return { code: 0, msg: '退出成功', data: {} } }
+    Notice.error({ duration: 3, title: success.data.msg });
+    return Promise.reject(success.data)
+  },
+  error => {
+    const url = error?.config?.url || ''
+    if (url.includes('/exit/')) { return Promise.resolve({ code: 0, msg: '退出成功', data: {} }) }
+    Notice.error({ duration: 3, title: '系统异常，请求中断' });
+    return Promise.reject(error)
+  }
+)
+</code></pre>
+  <p>退出接口无论后端响应如何都静默成功，前端统一清理会话，避免“退出弹错”。</p>
+
+  <h4>7.10.2 API 层与导出/下载</h4>
+  <pre class="small"><code>client/src/api/index.js
+// 学生练习与导出
+export function getStudentPracticePapers(token) { return http.get('/practicepapers/student/', { params: { token: token || '' } }) }
+export function startPractice(token, paperId) { return http.post('/studentpractice/start/', { token: token || '', paperId }) }
+export function exportPracticeLogs(token) { return http.get('/studentpractice/export/', { params: { token }, responseType: 'blob' }) }
+export function exportPracticeAnswers(logId) { return http.get('/studentpractice/export_answers/', { params: { logId }, responseType: 'blob' }) }
+
+// 题目导入/导出
+export function importAdminQuestions(formData) { return http.post('/admin/questions_import/', formData, { headers: { 'Content-Type': 'multipart/form-data' } }) }
+export function exportAdminQuestions(filters) { return http.post('/admin/questions_export/', filters, { responseType: 'blob' }) }
+</code></pre>
+
+  <h4>7.10.3 路由与菜单（含 AI 页）</h4>
+  <pre class="small"><code>client/src/router/index.js
+children: [
+  { path: 'aiScoring', name: 'aiScoring', component: require("../views/pages/aiScoring.vue").default },
+  { path: 'aiQuestionGenerator', name: 'aiQuestionGenerator', component: require("../views/pages/aiQuestionGenerator.vue").default }
+]
+</code></pre>
+
+  <h4>7.10.4 顶部导航：静默退出</h4>
+  <pre class="small"><code>client/src/components/nav.vue
+exit(this.$store.state.token)
+  .finally(() => {
+    this.$store.commit('clearToken'); this.$store.commit('clearMenus');
+    sessionStorage.clear(); window.location.href = '/';
+  });
+</code></pre>
+  <p>配合拦截器的 `/exit/` 特判，确保任何异常情况下都能“无提示地”退出到登录页。</p>
+</div>
+
+<div class="section">
+  <h3>7.11 进阶说明与可扩展点</h3>
+  <ul>
+    <li><strong>AI 接口重试/提示</strong>：前端建议统一封装 `withRetry`，在 AI 高负载时给出“繁忙，正在重试”文案。</li>
+    <li><strong>编程题沙箱</strong>：后续可引入 Docker + 资源限制 + 测试用例，实现安全判题与部分得分。</li>
+    <li><strong>学习分析</strong>：按知识点/题型/难度维度出图表（趋势/雷达），沉淀学生画像。</li>
+    <li><strong>Excel(XLSX) 支持</strong>：在 CSV 基础上扩展为 XLSX 导入导出，提升可用性。</li>
+  </ul>
+</div>
+
+<div class="section">
+  <h3>8. Critical Evaluation</h3>
+  <h4>8.1 Problems/difficulties encountered and solutions</h4>
+  <ul>
+    <li>Compile errors from method separators → fixed.</li>
+    <li>Select runtime error due to non-string values → enforced String values/labels.</li>
+    <li>Inconsistent success checks → unified to code==0.</li>
+    <li>Logout error popups → silent handling for /exit/.</li>
+    <li>AI variability → standardized prompts, frontend retry, backend fallback.</li>
+  </ul>
+  <h4>8.2 Limitations of the proposed system</h4>
+  <ul>
+    <li>Programming questions not yet executed in a secure sandbox with resource limits.</li>
+    <li>No async queue yet for long AI jobs.</li>
+    <li>Learning analytics dashboard minimal (trends/radar pending).</li>
+    <li>Limited formal evaluation (accuracy/latency/cost vs baseline).</li>
+  </ul>
+</div>
+
+<div class="section">
+  <h3>9. Project Progress and Schedule</h3>
+  <h4>9.1 Proposed project schedule update</h4>
+  <ul>
+    <li>W1–2: Setup, DB alignment, base CRUD</li>
+    <li>W3–4: Practice/Tasks/Exams flows, CSV import/export</li>
+    <li>W5–6: AI scoring & question generation (MVP), error handling unification</li>
+    <li>W7–8: Stability pass, menus, exports, wrong-question drills</li>
+    <li>W9–10 (next): Programming sandbox (Docker), partial scoring, task queue</li>
+    <li>W11–12 (next): Analytics dashboard; evaluation; deployment scripts</li>
+  </ul>
+  <h4>9.2 Completed and future deliverables</h4>
+  <p><strong>Completed:</strong> Multi-role UI; practice/tasks; AI scoring/generation MVP; CSV I/O; wrong-question drills; unified interceptors and value typing; docs.</p>
+  <p><strong>Planned:</strong> Sandbox + partial scores; Celery/Redis; analytics dashboards; formal evaluation; Docker Compose deployment.</p>
+  <h4>9.3 Tools, facilities and hardware</h4>
+  <p>Dev: Node.js, npm, Python 3.x, Django, MySQL, Git. Optional: Docker/Compose. Accounts: OpenAI/OpenRouter key.</p>
+  <h4>9.4 Dev vs Prod environment</h4>
+  <p>Dev: Windows 10, local Django & Vue servers, local MySQL. Prod target: Linux VM/Containers; Nginx; Docker Compose; .env config.</p>
+</div>
+
+<div class="section">
+  <h3>10. References</h3>
+  <ol>
+    <li>AI-assisted Assessment Overview – https://www.edsurge.com/research/topics/ai-in-education</li>
+    <li>OpenAI API Docs – https://platform.openai.com/docs</li>
+    <li>Django Official Documentation – https://docs.djangoproject.com/</li>
+    <li>Vue 3 Documentation – https://vuejs.org/</li>
+    <li>Axios Documentation – https://axios-http.com/</li>
+  </ol>
+</div>
+
+<div class="section">
+  <h3>Appendices A : Log Book</h3>
+  <p class="small">[Week-by-week notes: meetings, decisions, task assignments, progress screenshots, issues and resolutions]</p>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,160 @@
+name: FYP Project CI/CD
+
+on:
+  push:
+    branches: [ master, main, develop ]
+  pull_request:
+    branches: [ master, main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        python-version: [3.9, '3.10', '3.11']
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: test_password
+          MYSQL_DATABASE: test_db
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=3
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Cache pip packages
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Install dependencies
+      run: |
+        cd source/server
+        pip install -r requirements.txt
+        pip install pytest pytest-django pytest-cov flake8
+
+    - name: Lint with flake8
+      run: |
+        cd source/server
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+    - name: Run tests
+      env:
+        DB_NAME: test_db
+        DB_USER: root
+        DB_PASSWORD: test_password
+        DB_HOST: 127.0.0.1
+        DB_PORT: 3306
+        SECRET_KEY: test-secret-key
+        DEBUG: True
+      run: |
+        cd source/server
+        python manage.py test --settings=server.settings --verbosity=2
+
+    - name: Check Django migrations
+      env:
+        DB_NAME: test_db
+        DB_USER: root
+        DB_PASSWORD: test_password
+        DB_HOST: 127.0.0.1
+        DB_PORT: 3306
+        SECRET_KEY: test-secret-key
+      run: |
+        cd source/server
+        python manage.py makemigrations --check --dry-run
+
+    - name: Run security checks
+      run: |
+        pip install safety bandit
+        cd source/server
+        safety check --full-report
+        bandit -r . -f json -o security-report.json || true
+
+    - name: Upload security report
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: security-report
+        path: source/server/security-report.json
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    - name: Build Docker image
+      uses: docker/build-push-action@v3
+      with:
+        context: .
+        file: ./docker-compose.yml
+        push: false
+        tags: fyp-project:latest
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  deploy-staging:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Deploy to staging
+      run: |
+        echo "Deploying to staging environment..."
+        # Add your deployment commands here
+        # e.g., deploy to staging server
+
+    - name: Run smoke tests
+      run: |
+        echo "Running smoke tests..."
+        # Add smoke test commands
+
+  deploy-production:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Deploy to production
+      run: |
+        echo "Deploying to production environment..."
+        # Add your production deployment commands here
+
+    - name: Notify deployment
+      uses: 8398a7/action-slack@v3
+      with:
+        status: ${{ job.status }}
+        text: 'Production deployment completed!'
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+      if: always()
