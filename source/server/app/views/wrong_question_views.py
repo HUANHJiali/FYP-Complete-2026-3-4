@@ -270,12 +270,20 @@ class WrongQuestionsView(BaseView):
             if not all([student_id, practise_id, source, source_id]):
                 return BaseView.error('必要参数不能为空')
 
+            try:
+                source_id_int = int(source_id)
+            except (TypeError, ValueError):
+                return BaseView.error('sourceId必须为数字')
+
+            if source_id_int < 0 or source_id_int > 2147483647:
+                return BaseView.error('sourceId超出有效范围')
+
             # 检查是否已存在相同错题
             existing = models.WrongQuestions.objects.filter(
                 student_id=student_id,
                 practise_id=practise_id,
                 source=source,
-                sourceId=source_id
+                sourceId=source_id_int
             ).first()
 
             if existing:
@@ -286,7 +294,7 @@ class WrongQuestionsView(BaseView):
                 student_id=student_id,
                 practise_id=practise_id,
                 source=source,
-                sourceId=source_id,
+                sourceId=source_id_int,
                 wrongAnswer=wrong_answer,
                 correctAnswer=correct_answer,
                 analysis=analysis,

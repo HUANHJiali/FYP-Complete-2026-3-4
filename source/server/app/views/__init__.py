@@ -45,7 +45,8 @@ if os.path.exists(_views_py_path):
     # TasksView -> task_views.py
     # PracticePapersView, StudentPracticeView -> practice_views.py
     # AdminView -> admin_views.py
-    AdminView = old_views_module.AdminView  # 回退导入，实际应该已被上面导入
+    # 当前 admin_views.py 仍有部分占位实现，优先回退到旧版完整实现
+    AdminView = old_views_module.AdminView
 else:
     # 如果views.py不存在，抛出错误
     raise ImportError(f"Cannot find app/views.py file at {_views_py_path}")

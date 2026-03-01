@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # ---------- MySQL ----------
   db:
@@ -38,8 +36,12 @@ services:
     command: >
       bash -c "
       echo 'Waiting for DB...' &&
-      sleep 10 &&
+      until python -c \"import pymysql; pymysql.connect(host='db',user='examuser',password='exam123456',db='db_exam').close()\" 2>/dev/null; do
+        echo '  MySQL not ready, wait 2s...';
+        sleep 2;
+      done &&
       python manage.py migrate --noinput &&
+      (python manage.py shell -c \"from app import models; c,_=models.Colleges.objects.get_or_create(id=1, defaults={'name':'默认学院','createTime':'2026-01-01 00:00:00'}); g,_=models.Grades.objects.get_or_create(id=1, defaults={'name':'默认班级','createTime':'2026-01-01 00:00:00'}); a,_=models.Users.objects.get_or_create(id='ADMIN001', defaults={'userName':'admin','passWord':'123456','name':'系统管理员','gender':'男','age':30,'type':0}); t,_=models.Users.objects.get_or_create(id='TEACHER001', defaults={'userName':'teacher','passWord':'123456','name':'教师账户','gender':'男','age':32,'type':1}); s,_=models.Users.objects.get_or_create(id='STUDENT001', defaults={'userName':'student','passWord':'123456','name':'学生账户','gender':'男','age':18,'type':2}); models.Teachers.objects.get_or_create(user=t, defaults={'phone':'13800000000','record':'本科','job':'讲师'}); models.Students.objects.get_or_create(user=s, defaults={'grade':g,'college':c}); print('default users ready')\" || echo 'seed users skipped') &&
       python manage.py collectstatic --noinput || true &&
       python manage.py runserver 0.0.0.0:8000
       "
@@ -55,6 +57,10 @@ services:
       ALLOWED_HOSTS: localhost,127.0.0.1,0.0.0.0,backend
       CORS_ALLOWED_ORIGINS: http://localhost:8080,http://127.0.0.1:8080
       CSRF_TRUSTED_ORIGINS: http://localhost:8080,http://127.0.0.1:8080
+      CSRF_EXEMPT_PATH_PREFIXES: /api/
+      ENABLE_RATE_LIMIT: "True"
+      RATELIMIT_ENABLE: "True"
+      TRUST_PROXY_HEADERS: "False"
       ZHIPUAI_API_KEY: ""
       ZHIPUAI_MODEL: glm-4-air
       ZHIPUAI_BASE_URL: https://open.bigmodel.cn/api/paas/v4
@@ -62,6 +68,12 @@ services:
       - "8000:8000"
     networks:
       - fyp_network
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health/').read()\" 2>/dev/null || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 6
+      start_period: 40s
     stdin_open: true
     tty: true
 
@@ -71,13 +83,20 @@ services:
     container_name: 25fyp_frontend
     restart: unless-stopped
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     environment:
       - VUE_APP_API_BASE_URL=http://localhost:8000
     ports:
       - "8080:8080"
     networks:
       - fyp_network
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"const http=require('http');http.get('http://127.0.0.1:8080',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1));\""]
+      interval: 20s
+      timeout: 10s
+      retries: 8
+      start_period: 80s
     stdin_open: true
     tty: true
 

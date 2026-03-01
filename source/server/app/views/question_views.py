@@ -139,10 +139,16 @@ class PractisesView(BaseView):
         for item in page_data:
 
             if item.type == 0:
+                answer_value = ''
+                if SysUtil.isExit(item.answer):
+                    try:
+                        answer_value = int(str(item.answer).strip())
+                    except (ValueError, TypeError):
+                        answer_value = str(item.answer).strip()
                 resl.append({
                     'id': item.id,
                     'name': item.name,
-                    'answer': int(item.answer) if SysUtil.isExit(item.answer) else '',
+                    'answer': answer_value,
                     'analyse': item.analyse,
                     'type': item.type,
                     'projectId': item.project.id,

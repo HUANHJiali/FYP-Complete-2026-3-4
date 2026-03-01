@@ -4,7 +4,7 @@
       <h2>题目管理</h2>
       <div>
         <Upload :before-upload="beforeImport" :show-upload-list="false" action="#">
-          <Button style="margin-right:8px">导入CSV</Button>
+          <Button style="margin-right:8px" :loading="importLoading">导入CSV</Button>
         </Upload>
         <Button style="margin-right:8px" @click="downloadTemplate">下载模板</Button>
         <Button style="margin-right:8px" @click="exportCsv">导出CSV</Button>
@@ -60,6 +60,11 @@
       @on-page-change="handlePageChange"
       @on-page-size-change="handlePageSizeChange"
     >
+      <template #questionContent="{ row }">
+        <div style="max-width:300px;">
+          <QuestionContentRenderer :content="row.name" compact />
+        </div>
+      </template>
       <template #action="{ row }">
         <Button type="primary" size="small" @click="editQuestion(row)" style="margin-right: 8px;">编辑</Button>
         <Button type="error" size="small" @click="deleteQuestion(row)">删除</Button>
@@ -238,9 +243,14 @@
 
 <script>
   import { getAdminQuestions, addAdminQuestion, updateAdminQuestion, deleteAdminQuestion, getAllProjects, importAdminQuestions, exportAdminQuestions, downloadQuestionsTemplate } from '@/api'
+  import QuestionContentRenderer from '@/components/QuestionContentRenderer.vue'
+  import { triggerBlobDownload } from '@/utils/fileDownload'
 
 export default {
   name: 'AdminQuestions',
+  components: {
+    QuestionContentRenderer
+  },
   data() {
     return {
       loading: false,
@@ -251,18 +261,7 @@ export default {
       projects: [],
       columns: [
         { title: 'ID', key: 'id', width: 80 },
-        { title: '题目内容', key: 'name', minWidth: 300, 
-          render: (h, params) => {
-            return h('div', {
-              style: {
-                maxWidth: '300px',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap'
-              }
-            }, params.row.name)
-          }
-        },
+        { title: '题目内容', slot: 'questionContent', minWidth: 300 },
         { title: '题目类型', key: 'type', width: 100,
           render: (h, params) => {
             const typeMap = {
@@ -352,7 +351,8 @@ export default {
         ]
       },
       showDeleteModal: false,
-      questionToDelete: {}
+      questionToDelete: {},
+      importLoading: false
     }
   },
   mounted() {
@@ -421,6 +421,7 @@ export default {
     },
 
     async beforeImport(file) {
+      this.importLoading = true
       try {
         // 验证文件类型
         if (!file.name.endsWith('.csv')) {
@@ -440,6 +441,16 @@ export default {
           return false
         }
 
+        const precheck = await this.preValidateImportCsv(file)
+        if (!precheck.ok) {
+          this.$Message.error(precheck.message || '导入文件预校验失败')
+          return false
+        }
+
+        if (precheck.warningMessage) {
+          this.$Message.warning(precheck.warningMessage)
+        }
+
         const fd = new FormData()
         fd.append('file', file)
         fd.append('subjectId', this.searchProject || '')
@@ -448,18 +459,24 @@ export default {
         if (resp.code === 0) {
           const created = resp.data.created || 0
           const failed = resp.data.failed || []
-          this.$Message.success(`导入完成：成功 ${created} 条，失败 ${failed.length} 条`)
+          const total = resp.data.total || (created + failed.length)
+          this.$Message.success(`导入完成：总计 ${total} 条，成功 ${created} 条，失败 ${failed.length} 条`)
 
           // 显示失败详情
           if (failed.length > 0) {
             console.table(failed)
-            // 显示前5个失败原因
-            const sampleErrors = failed.slice(0, 5).map(f => `第${f.line}行: ${f.reason}`).join('\\n')
-            const moreMsg = failed.length > 5 ? `\\n...还有 ${failed.length - 5} 条错误` : ''
-            this.$Message.warning({
-              content: `导入失败详情：\\n${sampleErrors}${moreMsg}\\n请查看控制台获取完整错误列表`,
-              duration: 5
+            const reasonSummary = this.buildImportReasonSummary(failed)
+            const sampleErrors = failed.slice(0, 8).map(f => `第${f.line}行: ${f.reason}`).join('\n')
+            const moreMsg = failed.length > 8 ? `\n...还有 ${failed.length - 8} 条错误` : ''
+
+            this.$Modal.warning({
+              title: '题库导入完成（存在失败项）',
+              width: 700,
+              content: `失败原因汇总：\n${reasonSummary}\n\n示例错误：\n${sampleErrors}${moreMsg}\n\n已自动下载失败明细CSV。`,
+              okText: '我知道了'
             })
+
+            this.downloadImportFailedReport(failed)
           }
           this.loadQuestions()
         } else {
@@ -485,8 +502,101 @@ export default {
         }
 
         this.$Message.error(errorMsg)
+      } finally {
+        this.importLoading = false
       }
       return false
+    },
+
+    async preValidateImportCsv(file) {
+      try {
+        const text = await this.readTextFile(file)
+        const lines = text.split(/\r?\n/).filter(line => String(line || '').trim() !== '')
+        if (lines.length < 2) {
+          return { ok: false, message: 'CSV中没有可导入的数据行' }
+        }
+
+        const headers = this.splitCsvLine(lines[0]).map(h => String(h || '').replace(/^\uFEFF/, '').trim())
+        const hasName = headers.includes('name') || headers.includes('题目')
+        const hasAnswer = headers.includes('answer') || headers.includes('答案')
+        if (!hasName || !hasAnswer) {
+          return { ok: false, message: 'CSV缺少必要列：name/题目、answer/答案' }
+        }
+
+        let warningMessage = ''
+        if (lines.length > 2001) {
+          warningMessage = '检测到导入数据超过2000行，建议分批导入以便排查错误'
+        }
+
+        return { ok: true, warningMessage }
+      } catch (error) {
+        console.error('导入文件预校验失败:', error)
+        return { ok: false, message: '无法读取CSV文件，请检查文件编码或内容' }
+      }
+    },
+
+    readTextFile(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result || '')
+        reader.onerror = () => reject(new Error('读取文件失败'))
+        reader.readAsText(file, 'utf-8')
+      })
+    },
+
+    splitCsvLine(line) {
+      const result = []
+      let current = ''
+      let inQuotes = false
+
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i]
+        const nextChar = line[i + 1]
+
+        if (char === '"') {
+          if (inQuotes && nextChar === '"') {
+            current += '"'
+            i += 1
+          } else {
+            inQuotes = !inQuotes
+          }
+          continue
+        }
+
+        if (char === ',' && !inQuotes) {
+          result.push(current)
+          current = ''
+          continue
+        }
+
+        current += char
+      }
+
+      result.push(current)
+      return result
+    },
+
+    buildImportReasonSummary(failed) {
+      const reasonMap = {}
+      failed.forEach(item => {
+        const reason = item.reason || '未知错误'
+        reasonMap[reason] = (reasonMap[reason] || 0) + 1
+      })
+      return Object.keys(reasonMap)
+        .sort((a, b) => reasonMap[b] - reasonMap[a])
+        .slice(0, 8)
+        .map(reason => `- ${reason}: ${reasonMap[reason]}条`)
+        .join('\n')
+    },
+
+    downloadImportFailedReport(failed) {
+      const escaped = (text) => `"${String(text || '').replace(/"/g, '""')}"`
+      const rows = ['line,reason']
+      failed.forEach(item => {
+        rows.push(`${item.line || ''},${escaped(item.reason || '')}`)
+      })
+      const csvContent = `\uFEFF${rows.join('\n')}`
+      triggerBlobDownload(csvContent, `questions_import_failed_${Date.now()}.csv`, 'text/csv;charset=utf-8;')
     },
 
     async exportCsv() {
@@ -498,15 +608,7 @@ export default {
           this.$Message.error(resp.msg || '导出失败')
           return
         }
-        const blob = new Blob([resp.data || resp], { type: 'text/csv;charset=utf-8;' })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = 'questions_export.csv'
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-        URL.revokeObjectURL(url)
+        triggerBlobDownload(resp.data || resp, 'questions_export.csv', 'text/csv;charset=utf-8;')
       } catch (e) {
         console.error('导出失败', e)
         this.$Message.error('导出失败')
@@ -521,15 +623,7 @@ export default {
           this.$Message.error(resp.msg || '下载模板失败')
           return
         }
-        const blob = new Blob([resp.data || resp], { type: 'text/csv;charset=utf-8;' })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = 'questions_template.csv'
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-        URL.revokeObjectURL(url)
+        triggerBlobDownload(resp.data || resp, 'questions_template.csv', 'text/csv;charset=utf-8;')
       }catch(e){
         console.error('下载模板失败', e)
         this.$Message.error('下载模板失败')
@@ -628,7 +722,11 @@ export default {
 
     editQuestion(question) {
       this.isEdit = true
-      this.formData = { ...question }
+      this.formData = {
+        ...question,
+        project: question.project || question.subjectId || null,
+        analysis: question.analysis || question.analyse || ''
+      }
       
       // 如果是选择题，确保选项格式正确
       if (question.type === 0 && !question.options) {
@@ -643,8 +741,18 @@ export default {
 
     async handleSubmit() {
       try {
-        const valid = await this.$refs.formRef.validate()
-        if (!valid) return
+        if (!this.formData.name || !String(this.formData.name).trim()) {
+          this.$Message.warning('请输入题目内容')
+          return
+        }
+        if (this.formData.type === null || this.formData.type === undefined || this.formData.type === '') {
+          this.$Message.warning('请选择题目类型')
+          return
+        }
+        if (!this.formData.project && !this.formData.subjectId) {
+          this.$Message.warning('请选择学科')
+          return
+        }
 
         // 验证选项（如果是选择题）
         if ([0].includes(this.formData.type)) {
@@ -667,7 +775,7 @@ export default {
           const payload = {
             name: this.formData.name,
             type: this.formData.type,
-            subjectId: this.formData.project,
+            subjectId: this.formData.project || this.formData.subjectId,
             answer: this.formData.correctAnswer,
             analyse: this.formData.analysis,
           }
@@ -690,7 +798,8 @@ export default {
         }
       } catch (error) {
         console.error('操作失败:', error)
-        this.$Message.error('操作失败')
+        const msg = error?.msg || error?.response?.data?.msg || '操作失败'
+        this.$Message.error(msg)
       }
     },
 

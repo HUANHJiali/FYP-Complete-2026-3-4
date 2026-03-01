@@ -86,7 +86,7 @@
                     </div>
                     
                     <div class="question-content">
-                        <div class="question-text">{{ answer.questionContent }}</div>
+                        <div class="question-text"><QuestionContentRenderer :content="answer.questionContent" /></div>
                         
                         <!-- 选择题选项 -->
                         <div v-if="answer.questionType === 0 && answer.options" class="options-list">
@@ -108,16 +108,16 @@
                         <div class="answer-item">
                             <span class="label">你的答案：</span>
                             <span class="value" :class="{ 'correct': answer.isCorrect, 'incorrect': !answer.isCorrect }">
-                                {{ answer.studentAnswer || '未作答' }}
+                                <QuestionContentRenderer :content="answer.studentAnswer || '未作答'" compact />
                             </span>
                         </div>
                         <div class="answer-item">
                             <span class="label">正确答案：</span>
-                            <span class="value correct">{{ answer.correctAnswer }}</span>
+                            <span class="value correct"><QuestionContentRenderer :content="answer.correctAnswer" compact /></span>
                         </div>
                         <div v-if="answer.analyse" class="answer-item">
                             <span class="label">解析：</span>
-                            <span class="value analyse">{{ answer.analyse }}</span>
+                            <span class="value analyse"><QuestionContentRenderer :content="answer.analyse" compact /></span>
                         </div>
                         <div v-if="answer.aiConfidence !== null || answer.aiFeedback || answer.aiAnalysis" class="answer-item">
                             <span class="label">AI评分：</span>
@@ -132,10 +132,10 @@
                                         <span v-if="answer.aiModel" style="margin-left:12px;color:#888;">模型：{{ answer.aiModel }}</span>
                                     </div>
                                     <div v-if="answer.aiFeedback">
-                                        <span style="color:#888;">反馈：</span>{{ answer.aiFeedback }}
+                                        <span style="color:#888;">反馈：</span><QuestionContentRenderer :content="answer.aiFeedback" compact />
                                     </div>
                                     <div v-if="answer.aiAnalysis">
-                                        <span style="color:#888;">分析：</span>{{ answer.aiAnalysis }}
+                                        <span style="color:#888;">分析：</span><QuestionContentRenderer :content="answer.aiAnalysis" compact />
                                     </div>
                                     <div v-if="answer.needsReview">
                                         <Button size="small" type="warning" @click="openReview(answer)">人工覆核</Button>
@@ -198,7 +198,7 @@
     padding: 24px;
     background: linear-gradient(135deg, #1890ff 0%, #0050b3 100%);
     border-radius: 12px;
-    color: white;
+    color: #000;
 }
 
 .header-content {
@@ -210,7 +210,7 @@
 
 .header-icon {
     font-size: 32px;
-    color: rgba(255, 255, 255, 0.9);
+    color: #000;
 }
 
 .header-text h2 {
@@ -536,9 +536,13 @@
 <script>
 import { getTaskInfo, getTaskAnswers, getTaskLogInfo } from '../../api/index.js';
 import http from '../../utils/http.js';
+import QuestionContentRenderer from '@/components/QuestionContentRenderer.vue';
 
 export default {
     name: 'TaskResult',
+    components: {
+        QuestionContentRenderer
+    },
     data() {
         return {
             loading: false,

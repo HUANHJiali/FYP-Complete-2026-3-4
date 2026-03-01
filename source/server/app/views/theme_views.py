@@ -3,11 +3,21 @@
 支持主题切换、主题设置保存等功能
 """
 from app import models
+from app.permissions import get_user_from_request
 from comm.BaseView import BaseView
 
 
 class ThemeViews:
     """用户主题设置"""
+
+    @staticmethod
+    def _require_owner_or_admin(request, user_id):
+        user = get_user_from_request(request)
+        if not user:
+            return None, BaseView.error('用户未登录')
+        if user.type != 0 and str(user.id) != str(user_id):
+            return None, BaseView.error('权限不足')
+        return user, None
     
     @staticmethod
     def get_theme(request):
@@ -24,6 +34,10 @@ class ThemeViews:
         
         if not user_id:
             return BaseView.warn('缺少用户ID')
+
+        _, err = ThemeViews._require_owner_or_admin(request, user_id)
+        if err:
+            return err
         
         try:
             theme_setting = models.UserThemeSettings.objects.get(user_id=user_id)
@@ -67,6 +81,10 @@ class ThemeViews:
         
         if not user_id:
             return BaseView.warn('缺少用户ID')
+
+        _, err = ThemeViews._require_owner_or_admin(request, user_id)
+        if err:
+            return err
         
         # 获取或创建主题设置
         theme_setting, created = models.UserThemeSettings.objects.get_or_create(
@@ -121,6 +139,10 @@ class ThemeViews:
         
         if not user_id:
             return BaseView.warn('缺少用户ID')
+
+        _, err = ThemeViews._require_owner_or_admin(request, user_id)
+        if err:
+            return err
         
         try:
             theme_setting = models.UserThemeSettings.objects.get(user_id=user_id)

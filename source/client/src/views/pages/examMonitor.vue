@@ -95,10 +95,10 @@
           </RadioGroup>
         </div>
         <Table :columns="studentColumns" :data="studentList" :loading="tableLoading" stripe>
-          <template slot-scope="{ row }" slot="status">
+          <template #status="{ row }">
             <Tag :color="getStatusColor(row.status)">{{ row.statusText }}</Tag>
           </template>
-          <template slot-scope="{ row }" slot="score">
+          <template #score="{ row }">
             <span v-if="row.score !== null" :class="getScoreClass(row.score)">
               {{ row.score }}
             </span>
@@ -113,7 +113,7 @@
 
       <Card title="题目正确率统计" class="question-stats-card">
         <Table :columns="questionColumns" :data="questionStats" stripe max-height="300">
-          <template slot-scope="{ row }" slot="correctRate">
+          <template #correctRate="{ row }">
             <Progress :percent="row.correctRate" :status="getProgressStatus(row.correctRate)" />
           </template>
         </Table>
@@ -129,6 +129,7 @@
 
 <script>
 import * as echarts from 'echarts';
+import http from '../../utils/http.js';
 
 export default {
   name: 'ExamMonitor',
@@ -182,13 +183,15 @@ export default {
   methods: {
     async loadExamList() {
       try {
-        const response = await this.$http.get('/api/exam-monitor/exams/');
-        if (response.data.code === 0) {
-          this.examList = response.data.data || [];
+        const response = await http.get('/exam-monitor/exams/');
+        if (response.code === 0) {
+          this.examList = response.data || [];
           if (this.examList.length > 0 && !this.selectedExamId) {
             this.selectedExamId = this.examList[0].id;
             this.loadAllData();
           }
+        } else {
+          this.$Message.error(response.msg || '获取考试列表失败');
         }
       } catch (error) {
         this.$Message.error('获取考试列表失败');
@@ -217,11 +220,13 @@ export default {
     },
     async loadExamStatus() {
       try {
-        const response = await this.$http.get('/api/exam-monitor/status/', {
+        const response = await http.get('/exam-monitor/status/', {
           params: { examId: this.selectedExamId }
         });
-        if (response.data.code === 0) {
-          this.examStatus = response.data.data;
+        if (response.code === 0) {
+          this.examStatus = response.data;
+        } else {
+          this.$Message.error(response.msg || '获取考试状态失败');
         }
       } catch (error) {
         console.error('获取考试状态失败:', error);
@@ -230,7 +235,7 @@ export default {
     async loadStudentList() {
       this.tableLoading = true;
       try {
-        const response = await this.$http.get('/api/exam-monitor/students/', {
+        const response = await http.get('/exam-monitor/students/', {
           params: {
             examId: this.selectedExamId,
             pageIndex: this.pageIndex,
@@ -238,9 +243,11 @@ export default {
             status: this.statusFilter
           }
         });
-        if (response.data.code === 0) {
-          this.studentList = response.data.data.list || [];
-          this.studentTotal = response.data.data.total || 0;
+        if (response.code === 0) {
+          this.studentList = response.data.list || [];
+          this.studentTotal = response.data.total || 0;
+        } else {
+          this.$Message.error(response.msg || '获取学生列表失败');
         }
       } catch (error) {
         console.error('获取学生列表失败:', error);
@@ -250,11 +257,13 @@ export default {
     },
     async loadQuestionStats() {
       try {
-        const response = await this.$http.get('/api/exam-monitor/questions/', {
+        const response = await http.get('/exam-monitor/questions/', {
           params: { examId: this.selectedExamId }
         });
-        if (response.data.code === 0) {
-          this.questionStats = response.data.data || [];
+        if (response.code === 0) {
+          this.questionStats = response.data || [];
+        } else {
+          this.$Message.error(response.msg || '获取题目统计失败');
         }
       } catch (error) {
         console.error('获取题目统计失败:', error);
@@ -262,15 +271,17 @@ export default {
     },
     async loadRealtimeData() {
       try {
-        const response = await this.$http.get('/api/exam-monitor/realtime/', {
+        const response = await http.get('/exam-monitor/realtime/', {
           params: { examId: this.selectedExamId }
         });
-        if (response.data.code === 0) {
-          const data = response.data.data;
+        if (response.code === 0) {
+          const data = response.data;
           this.examStatus.submittedCount = data.submittedCount;
           this.examStatus.inProgressCount = data.inProgressCount;
           this.recentSubmits = data.recentSubmits || [];
           this.updatePieChart();
+        } else {
+          this.$Message.error(response.msg || '获取实时数据失败');
         }
       } catch (error) {
         console.error('获取实时数据失败:', error);

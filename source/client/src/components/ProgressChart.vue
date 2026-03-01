@@ -15,7 +15,7 @@
 
 <script>
 import * as echarts from 'echarts'
-import { getExamLogs, getPracticeLogs } from '@/api'
+import { getPageStudentExamLogs, getPracticeLogs } from '@/api'
 
 export default {
   name: 'ProgressChart',
@@ -114,10 +114,7 @@ export default {
     async loadData() {
       try {
         // 加载考试记录
-        const examRes = await getExamLogs({
-          studentId: this.studentId,
-          pageSize: 100
-        })
+        const examRes = await getPageStudentExamLogs(1, 100, '', this.studentId, '')
         if (examRes.code === 0) {
           this.examData = examRes.data.data || []
         }

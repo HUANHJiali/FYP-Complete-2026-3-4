@@ -180,7 +180,7 @@ class TeachersView(BaseView):
         if SysUtil.isExit(job):
             query = query & Q(job=job)
 
-        data = models.Teachers.objects.filter(query)
+        data = models.Teachers.objects.filter(query).order_by('user__id')
 
         paginator = Paginator(data, pageSize)
 
@@ -344,7 +344,7 @@ class StudentsView(BaseView):
         if SysUtil.isExit(gradeId):
             query = query & Q(grade__id=int(gradeId))
 
-        data = models.Students.objects.filter(query)
+        data = models.Students.objects.filter(query).order_by('user__id')
 
         paginator = Paginator(data, pageSize)
 

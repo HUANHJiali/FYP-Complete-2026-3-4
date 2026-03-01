@@ -1,15 +1,15 @@
-# 智能学生考试系统 (FYPPPP)
+# 智能学生考试系统 (FYP 2025)
 
 ## 项目概述
-这是一个基于Django + Vue.js的智能学生考试系统，集成了AI智能评分和自动出题功能。
+这是一个基于 Django + Vue 3 的智能学生考试系统，集成 AI 智能评分与自动出题能力。
 
 ## 技术架构
-- **前端**: Vue.js 2.x + iView UI + Vue Router + Vuex
-- **后端**: Django 4.1.3 + MySQL + REST API
+- **前端**: Vue.js 3.x + View UI Plus + Vue Router 4 + Vuex 4
+- **后端**: Django 4.1.3 + MySQL 8+ + REST API
 - **AI集成**: 智谱AI (GLM-4-Flash)
-- **database**: MySQL
+- **部署**: Docker Compose（推荐）/ Nginx + Gunicorn
 
-## 精简目录结构
+## 目录结构（核心）
 ```
 source/
 ├── 📁 client/              # Vue前端代码
@@ -22,18 +22,12 @@ source/
 │   ├── comm/               # 公共工具
 │   ├── manage.py           # Django管理脚本
 │   └── requirements.txt    # Python依赖
-├── 📁 config/              # 配置文件
-│   ├── 智谱AI配置.md        # AI配置说明
-│   ├── setup_zhipuai_env.ps1  # 环境配置脚本
-│   └── 删除日志表.sql       # database脚本
-├── 📁 tools/               # 工具脚本
-│   ├── debug_jwt.py        # JWT调试工具
-│   ├── diagnose_zhipuai.py # AI诊断工具
-│   └── verify_api_key.py   # API密钥验证
-├── 📁 startup/             # 启动脚本
-│   ├── start_services.bat  # Windows启动脚本
-│   ├── start_services.sh   # Linux启动脚本
-│   └── stop_services.bat   # 停止服务脚本
+├── 📁 docs/                # 文档与答辩材料
+├── 📁 server/tools/        # 回归与验收脚本
+│   ├── run_regression_baseline.py
+│   ├── run_defense_demo_check.py
+│   ├── run_defense_demo_check.bat
+│   └── run_defense_demo_check.sh
 ├── 📁 docs/                # 核心功能文档
 │   ├── AI功能使用说明.md    # AI功能说明
 │   ├── 系统架构与演示说明.md # 系统架构说明
@@ -45,19 +39,23 @@ source/
 
 ## 快速启动
 
-### 方法1: 使用启动脚本 (推荐)
+### 方法1: Docker 启动（推荐）
 ```bash
-# Windows用户
-双击 startup/start_services.bat
+# Windows
+双击 ..\\docker-start.bat
 
-# Linux/Mac用户
-./startup/start_services.sh
+# Linux/Mac
+../docker-start.sh
 ```
 
 ### 方法2: 手动启动
 ```bash
 # 后端
 cd server
+python -m venv .venv
+.venv\Scripts\activate   # Linux/Mac 用: source .venv/bin/activate
+pip install -r requirements.txt
+python manage.py migrate
 python manage.py runserver
 
 # 前端 (新终端)
@@ -86,14 +84,22 @@ npm run serve
 - ✅ **任务中心** - 学习任务管理
 
 ## 配置说明
-1. **AI配置**: 参考 `config/智谱AI配置.md`
-2. **环境配置**: 运行 `config/setup_zhipuai_env.ps1`
-3. **database**: 确保MySQL服务运行
+1. 复制 `env.example` 为 `.env`
+2. 填写数据库、CORS/CSRF 与 AI 参数
+3. 生产环境必须：`DEBUG=False` 且配置强随机 `SECRET_KEY`
 
 ## 注意事项
 - 首次运行需要安装依赖
-- 确保database连接正常
-- 配置智谱AI API密钥
+- 确保数据库连接正常
+- 未配置 AI Key 时，AI 功能接口将不可用
+
+## 验收建议（答辩前）
+```bash
+cd server
+python tools/run_defense_demo_check.py
+```
+
+Windows 可直接运行：`server\\tools\\run_defense_demo_check.bat`
 
 ## 项目状态
 详细的项目进度和功能状态请查看 `PROJECT_STATUS.md`

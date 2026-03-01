@@ -231,6 +231,7 @@
 
 <script>
 import { getUserMessages, markUserMessageRead, markAllUserMessagesRead, deleteUserMessage } from '@/api/index.js'
+import { triggerBlobDownload } from '@/utils/fileDownload'
 
 export default {
     name: 'MessageCenter',
@@ -483,15 +484,7 @@ export default {
                 }
 
                 const blob = res.data || res; // 拦截器对blob返回原始响应
-                const downloadBlob = blob instanceof Blob ? blob : new Blob([blob]);
-                const url = window.URL.createObjectURL(downloadBlob);
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = attachment.name || '附件';
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                window.URL.revokeObjectURL(url);
+                triggerBlobDownload(blob, attachment.name || '附件')
             } catch (error) {
                 console.error('下载附件失败:', error);
                 this.$Message.error('下载附件失败，请稍后重试');

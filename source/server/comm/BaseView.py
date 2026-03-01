@@ -5,11 +5,8 @@ import json
 
 from django.http import HttpResponse
 from django.views import View
-from django.views.decorators.csrf import csrf_exempt
-from django.utils.decorators import method_decorator
 
 
-@method_decorator(csrf_exempt, name='dispatch')  # ✅ 安全修复：豁免 API 的 CSRF 检查（前后端分离项目）
 class BaseView(View):
 
     '''

@@ -16,6 +16,11 @@ const service = axios.create({
 })
 
 service.interceptors.request.use(config => {
+    const token = sessionStorage.getItem('token') || localStorage.getItem('token')
+    if (token && !(config.headers && config.headers.Authorization)) {
+        config.headers = config.headers || {}
+        config.headers.Authorization = `Bearer ${token}`
+    }
 	
     if(config.method === "post"){
         const isFormData = (typeof FormData !== 'undefined') && (config.data instanceof FormData);

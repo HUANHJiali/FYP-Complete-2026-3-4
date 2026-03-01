@@ -121,13 +121,12 @@ module.exports = defineConfig({
     },
     proxy: {
       '/api': {
-        target: process.env.NODE_ENV === 'production' ? 'http://backend:8000' : 'http://host.docker.internal:8000',
+        // VUE_APP_BACKEND_URL 在 Docker 内由 docker-compose 注入为 http://backend:8000
+        // 本地开发不设置该变量时，回落到 localhost:8000
+        target: process.env.VUE_APP_BACKEND_URL || 'http://127.0.0.1:8000',
         changeOrigin: true,
         ws: true,
-        secure: false,
-        onProxyReq: function(proxyReq, req, res) {
-          proxyReq.setHeader('Host', 'localhost:8000');
-        }
+        secure: false
       }
     }
   },

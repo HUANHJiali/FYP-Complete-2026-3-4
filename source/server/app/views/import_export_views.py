@@ -6,7 +6,6 @@
 import csv
 import io
 from django.http import JsonResponse, HttpResponse
-from django.views.decorators.csrf import csrf_exempt
 from django.db import transaction
 from app import models
 from app.permissions import get_user_from_request
@@ -34,7 +33,6 @@ def _log_import_operation(request, operation_type, module, detail, status=1):
         pass
 
 
-@csrf_exempt
 def import_students(request):
     """
     批量导入学生信息（简化版）
@@ -163,7 +161,6 @@ def import_students(request):
         })
 
 
-@csrf_exempt
 def export_students_template(request):
     """
     导出学生导入模板（CSV格式）

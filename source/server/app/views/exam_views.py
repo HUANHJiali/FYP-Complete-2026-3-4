@@ -7,12 +7,16 @@
 from django.core.paginator import Paginator
 from django.db.models import Q
 from django.db import transaction
+from datetime import datetime
+import os
 
 from app import models
 from app.permissions import get_user_from_request
 from comm import ExamUtils
 from comm.BaseView import BaseView
 from comm.CommUtils import SysUtil, DateUtil
+from comm.lifecycle_status import resolve_exam_lifecycle, status_text, exam_status_code
+from comm.cache_decorator import cache_api_response
 from django.core.cache import cache
 from utils.OperationLogger import OperationLogger
 
@@ -40,6 +44,42 @@ def _log_exam_operation(request, operation_type, resource_id, resource_name, sta
 class ExamsView(BaseView):
     """考试管理视图"""
 
+    @staticmethod
+    def _normalize_datetime_text(value):
+        """将前端传入的时间值规范化为 YYYY-MM-DD HH:MM:SS（长度19）。"""
+        if value in [None, '']:
+            return None
+
+        # datetime对象直接格式化
+        if isinstance(value, datetime):
+            return value.strftime('%Y-%m-%d %H:%M:%S')
+
+        text = str(value).strip()
+        if not text:
+            return None
+
+        # 兼容 ISO 字符串与毫秒/时区后缀
+        text = text.replace('T', ' ')
+        if '.' in text:
+            text = text.split('.', 1)[0]
+        if '+' in text:
+            text = text.split('+', 1)[0]
+        if text.endswith('Z'):
+            text = text[:-1]
+
+        # 再次尝试解析为datetime后格式化
+        for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d']:
+            try:
+                dt = datetime.strptime(text, fmt)
+                if fmt == '%Y-%m-%d':
+                    dt = dt.replace(hour=0, minute=0, second=0)
+                return dt.strftime('%Y-%m-%d %H:%M:%S')
+            except Exception:
+                continue
+
+        # 最后兜底，避免写入超长导致 1406
+        return text[:19] if text else None
+
     def _check_teacher_permission(self, request):
         """检查教师权限（教师和管理员可访问）"""
         user = get_user_from_request(request)
@@ -64,10 +104,17 @@ class ExamsView(BaseView):
             return BaseView.error('请求地址不存在')
 
     def post(self, request, module, *args, **kwargs):
-        # ✅ 安全检查：仅教师和管理员可添加/修改/删除考试
-        allowed, error_response = self._check_teacher_permission(request)
-        if not allowed:
-            return error_response
+        # ✅ 权限控制：
+        # - add / create_from_practice_paper：仅教师和管理员
+        # - make：登录用户可调用（学生答题页需要按科目生成试卷）
+        if module in ['add', 'create_from_practice_paper']:
+            allowed, error_response = self._check_teacher_permission(request)
+            if not allowed:
+                return error_response
+        elif module == 'make':
+            user = get_user_from_request(request)
+            if not user:
+                return BaseView.error('用户未登录')
 
         if module == 'add':
             return self.add_info(request)
@@ -99,6 +146,7 @@ class ExamsView(BaseView):
         })
 
     @staticmethod
+    @cache_api_response(timeout=60, key_prefix='exams_page')
     def get_page_infos(request):
         """分页查询考试信息"""
         pageIndex = request.GET.get('pageIndex', 1)
@@ -138,6 +186,14 @@ class ExamsView(BaseView):
             except Exception:
                 student_status = None
 
+            lifecycle_status = resolve_exam_lifecycle(
+                start_time=getattr(item, 'startTime', None),
+                end_time=getattr(item, 'endTime', None),
+                legacy_exam_time=item.examTime
+            )
+            if student_status == 2:
+                lifecycle_status = 'completed'
+
             resl.append({
                 'id': item.id,
                 'name': item.name,
@@ -151,7 +207,10 @@ class ExamsView(BaseView):
                 'teacherName': item.teacher.name,
                 'gradeId': item.grade.id,
                 'gradeName': item.grade.name,
-                'studentStatus': student_status
+                'studentStatus': student_status,
+                'status': exam_status_code(lifecycle_status),
+                'lifecycleStatus': lifecycle_status,
+                'lifecycleStatusText': status_text(lifecycle_status)
             })
 
         pageData = BaseView.parasePage(
@@ -165,25 +224,50 @@ class ExamsView(BaseView):
     @staticmethod
     def add_info(request):
         """添加考试信息"""
-        if ExamUtils.CheckPractiseTotal.check(request.POST.get('projectId')):
+        project_id = request.POST.get('projectId') or request.POST.get('project') or request.POST.get('subjectId')
+        grade_id = request.POST.get('gradeId') or request.POST.get('grade')
+        teacher_id = request.POST.get('teacherId')
+        exam_name = request.POST.get('name') or request.POST.get('title')
 
-            if models.Teachers.objects.filter(user__id=request.POST.get('teacherId')).exists():
-                exam = models.Exams.objects.create(
-                    name=request.POST.get('name'),
-                    examTime=request.POST.get('examTime'),
-                    startTime=request.POST.get('startTime') or None,
-                    endTime=request.POST.get('endTime') or None,
-                    project=models.Projects.objects.get(id=request.POST.get('projectId')),
-                    teacher=models.Users.objects.get(id=request.POST.get('teacherId')),
-                    grade=models.Grades.objects.get(id=request.POST.get('gradeId')),
-                    createTime=DateUtil.getNowDateTime()
-                )
-                _log_exam_operation(request, 'create', exam.id, exam.name)
-                return BaseView.success()
-            else:
-                return BaseView.warn('指定工号的教师不存在')
-        else:
+        if not exam_name:
+            return BaseView.error('考试名称不能为空')
+        if not project_id:
+            return BaseView.error('考核科目不能为空')
+        if not grade_id:
+            return BaseView.error('考核班级不能为空')
+
+        if not ExamUtils.CheckPractiseTotal.check(project_id):
             return BaseView.warn('相关题目数量不足，无法准备考试')
+
+        project = models.Projects.objects.filter(id=project_id).first()
+        grade = models.Grades.objects.filter(id=grade_id).first()
+        if not project:
+            return BaseView.warn('指定科目不存在')
+        if not grade:
+            return BaseView.warn('指定班级不存在')
+
+        teacher = models.Users.objects.filter(id=teacher_id).first() if teacher_id else None
+        if not teacher:
+            token = request.POST.get('token') or request.META.get('HTTP_AUTHORIZATION', '').replace('Bearer ', '')
+            login_user_id = cache.get(token) if token else None
+            teacher = models.Users.objects.filter(id=login_user_id).first() if login_user_id else None
+        if not teacher:
+            teacher = models.Users.objects.filter(type=1).first() or models.Users.objects.filter(type=0).first()
+        if not teacher:
+            return BaseView.warn('未找到可用教师账号')
+
+        exam = models.Exams.objects.create(
+            name=exam_name,
+            examTime=ExamsView._normalize_datetime_text(request.POST.get('examTime')) or DateUtil.getNowDateTime(),
+            startTime=ExamsView._normalize_datetime_text(request.POST.get('startTime')),
+            endTime=ExamsView._normalize_datetime_text(request.POST.get('endTime')),
+            project=project,
+            teacher=teacher,
+            grade=grade,
+            createTime=DateUtil.getNowDateTime()
+        )
+        _log_exam_operation(request, 'create', exam.id, exam.name)
+        return BaseView.success()
 
     @staticmethod
     def create_exam_paper(request):
@@ -197,10 +281,10 @@ class ExamsView(BaseView):
     def create_from_practice_paper(request):
         """从练习试卷一键创建考试"""
         try:
-            paper_id = request.POST.get('paperId')
+            paper_id = request.POST.get('paperId') or request.POST.get('practicePaperId') or request.POST.get('id')
             name = request.POST.get('name')
-            teacher_id = request.POST.get('teacherId')
-            grade_id = request.POST.get('gradeId')
+            teacher_id = request.POST.get('teacherId') or request.POST.get('teacher_id')
+            grade_id = request.POST.get('gradeId') or request.POST.get('grade_id')
             exam_time = request.POST.get('examTime')
 
             if not all([paper_id, teacher_id, grade_id]):
@@ -224,9 +308,9 @@ class ExamsView(BaseView):
 
             exam = models.Exams.objects.create(
                 name=name or f"{paper.title}-考试",
-                examTime=exam_time or DateUtil.getNowDateTime(),
-                startTime=request.POST.get('startTime') or None,
-                endTime=request.POST.get('endTime') or None,
+                examTime=ExamsView._normalize_datetime_text(exam_time) or DateUtil.getNowDateTime(),
+                startTime=ExamsView._normalize_datetime_text(request.POST.get('startTime')),
+                endTime=ExamsView._normalize_datetime_text(request.POST.get('endTime')),
                 project=paper.project,
                 teacher=teacher_user,
                 grade=grade_obj,
@@ -325,14 +409,16 @@ class ExamLogsView(BaseView):
 
     @staticmethod
     def get_page_student_logs(request):
-        """分页获取学生考试记录"""
+        """分页获取学生考试记录（管理员/教师可查看全部，学生只查看自身）"""
         pageIndex = request.GET.get('pageIndex', 1)
         pageSize = request.GET.get('pageSize', 10)
         examName = request.GET.get('examName')
         studentId = request.GET.get('studentId')
         projectId = request.GET.get('projectId')
 
-        query = Q(student__id=studentId)
+        query = Q()
+        if SysUtil.isExit(studentId):
+            query = query & Q(student__id=studentId)
         if SysUtil.isExit(examName):
             query = query & Q(exam__name__contains=examName)
         if SysUtil.isExit(projectId):
@@ -340,7 +426,7 @@ class ExamLogsView(BaseView):
 
         # 使用select_related优化外键查询，避免N+1问题
         data = models.ExamLogs.objects.filter(query).select_related(
-            'exam', 'exam__teacher', 'exam__project'
+            'exam', 'exam__teacher', 'exam__project', 'student'
         ).order_by('-createTime')
 
         paginator = Paginator(data, pageSize)
@@ -355,6 +441,8 @@ class ExamLogsView(BaseView):
                 'score': item.score,
                 'examId': item.exam.id,
                 'examName': item.exam.name,
+                'studentId': item.student.id,
+                'studentName': item.student.name,
                 'teacherId': item.exam.teacher.id,
                 'teacherName': item.exam.teacher.name,
                 'projectId': item.exam.project.id,
@@ -659,6 +747,12 @@ class AnswerLogsView(BaseView):
         if not student_id:
             return BaseView.error('登录状态失效，请重新登录后再试')
 
+        try:
+            student_obj = models.Users.objects.get(id=student_id)
+            exam_obj = models.Exams.objects.get(id=examId)
+        except Exception:
+            return BaseView.error('考试或学生信息不存在，无法提交')
+
         # 统一将 nos/ids/answers 全部转为列表
         if isinstance(nos, str):
             nos = [x for x in nos.split(',') if x != '']
@@ -672,29 +766,46 @@ class AnswerLogsView(BaseView):
             except Exception:
                 answers = [answers]
 
+        # 覆盖式提交：先清理该学生本场考试旧答案，避免重复累积导致后续提交越来越慢
+        query = Q(exam__id=examId) & Q(student__id=student_id)
+        models.AnswerLogs.objects.filter(query).delete()
+
         # 写入答案
+        created_answers = []
         for no in nos:
             idx = int(no) - 1
             if idx < 0 or idx >= len(practiseIds) or idx >= len(answers):
                 continue
-            models.AnswerLogs.objects.create(
-                student=models.Users.objects.get(id=student_id),
-                exam=models.Exams.objects.get(id=examId),
-                practise=models.Practises.objects.get(id=practiseIds[idx]),
-                status=0,
-                answer=answers[idx] if answers[idx] is not None else '',
-                no=no
-            )
+            try:
+                created_answers.append(models.AnswerLogs(
+                    student=student_obj,
+                    exam=exam_obj,
+                    practise=models.Practises.objects.get(id=practiseIds[idx]),
+                    status=0,
+                    answer=answers[idx] if answers[idx] is not None else '',
+                    no=no
+                ))
+            except Exception:
+                continue
 
-        # 自动评分并直接出分（取消老师审核）
-        from comm.AIUtils import AIUtils as _AI
-        ai_utils = _AI()
-        query = Q(exam__id=examId) & Q(student__id=student_id)
-        answers_qs = models.AnswerLogs.objects.filter(query)
+        if created_answers:
+            models.AnswerLogs.objects.bulk_create(created_answers)
+
+        # 评分策略：客观题即时评分；主观题默认待审核（避免AI同步评分阻塞导致超时）
+        enable_sync_ai = str(os.environ.get('ENABLE_SYNC_AI_SCORING', 'false')).lower() in ['1', 'true', 'yes', 'on']
+        ai_utils = None
+        if enable_sync_ai:
+            try:
+                from comm.AIUtils import AIUtils as _AI
+                ai_utils = _AI()
+            except Exception:
+                ai_utils = None
+
+        answers_qs = models.AnswerLogs.objects.filter(query).select_related('practise')
         total = 0.0
+        pending_manual = 0
         for item in answers_qs:
             practise = item.practise
-            ai_res = {}
             if practise.type in [0, 2]:
                 # 选择/判断：对比正确答案
                 score = 2 if str(practise.answer).strip().lower() == str(item.answer).strip().lower() else 0
@@ -702,84 +813,36 @@ class AnswerLogsView(BaseView):
                 item.status = 1
                 item.save(update_fields=['score', 'status'])
                 total += score
-                # 错题入库：选择/判断答错
-                if score < 2:
-                    try:
-                        analysis_text = practise.analyse or ''
-                        if not analysis_text:
-                            try:
-                                ai_explain = ai_utils.ai_analyze_wrong_answer(
-                                    practise.name, practise.answer or '', item.answer or '', practise.type
-                                )
-                                analysis_text = ai_explain.get('analysis') or ''
-                            except Exception:
-                                analysis_text = ''
-                        wrong, created = models.WrongQuestions.objects.get_or_create(
-                            student=models.Users.objects.get(id=student_id),
-                            practise=practise,
-                            source='exam',
-                            sourceId=examId,
-                            defaults={
-                                'wrongAnswer': item.answer or '',
-                                'correctAnswer': practise.answer or '',
-                                'analysis': analysis_text,
-                                'createTime': DateUtil.getNowDateTime()
-                            }
-                        )
-                        if not created:
-                            wrong.wrongAnswer = item.answer or ''
-                            wrong.correctAnswer = practise.answer or ''
-                            if analysis_text and not wrong.analysis:
-                                wrong.analysis = analysis_text
-                            wrong.save()
-                    except Exception:
-                        pass
             elif practise.type in [1, 3]:
-                # 填空/编程：AI评分
-                try:
-                    ai_res = ai_utils.ai_score_answer(
-                        question_content=practise.name,
-                        correct_answer=practise.answer or '',
-                        student_answer=item.answer or '',
-                        question_type=practise.type,
-                        max_score=2.0 if practise.type == 1 else 20.0
-                    )
-                    score = float(ai_res.get('score', 0))
-                except Exception:
-                    score = 0.0
-                item.score = score
-                item.status = 1
-                item.save(update_fields=['score', 'status'])
-                total += score
-                # 错题入库：分数未满则视为错题
-                max_score = 2.0 if practise.type == 1 else 20.0
-                if score < max_score:
+                # 填空/编程：默认待审核，避免同步AI评分导致请求超时
+                if ai_utils:
                     try:
-                        analysis_text = (ai_res.get('analysis') if isinstance(ai_res, dict) else '') or practise.analyse or ''
-                        wrong, created = models.WrongQuestions.objects.get_or_create(
-                            student=models.Users.objects.get(id=student_id),
-                            practise=practise,
-                            source='exam',
-                            sourceId=examId,
-                            defaults={
-                                'wrongAnswer': item.answer or '',
-                                'correctAnswer': practise.answer or '',
-                                'analysis': analysis_text,
-                                'createTime': DateUtil.getNowDateTime()
-                            }
+                        ai_res = ai_utils.ai_score_answer(
+                            question_content=practise.name,
+                            correct_answer=practise.answer or '',
+                            student_answer=item.answer or '',
+                            question_type=practise.type,
+                            max_score=2.0 if practise.type == 1 else 20.0
                         )
-                        if not created:
-                            wrong.wrongAnswer = item.answer or ''
-                            wrong.correctAnswer = practise.answer or ''
-                            if analysis_text and not wrong.analysis:
-                                wrong.analysis = analysis_text
-                            wrong.save()
+                        score = float(ai_res.get('score', 0))
+                        item.score = score
+                        item.status = 1
+                        item.save(update_fields=['score', 'status'])
+                        total += score
                     except Exception:
-                        pass
+                        item.score = 0.0
+                        item.status = 0
+                        item.save(update_fields=['score', 'status'])
+                        pending_manual += 1
+                else:
+                    item.score = 0.0
+                    item.status = 0
+                    item.save(update_fields=['score', 'status'])
+                    pending_manual += 1
 
-        # 写入考试日志为结束状态并记录总分
-        models.ExamLogs.objects.filter(query).update(status=2, score=total)
-        return BaseView.successData({'score': total})
+        # 学生交卷后置为“待发布”(status=1)，由教师审核/发布后再置为2
+        models.ExamLogs.objects.filter(query).update(status=1, score=total)
+        return BaseView.successData({'score': total, 'pendingManual': pending_manual})
 
     @staticmethod
     def aduit_answer(request):

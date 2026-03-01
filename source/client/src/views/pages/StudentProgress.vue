@@ -7,22 +7,28 @@
 
     <Card class="filter-card">
       <div class="filter-section">
-        <span class="filter-label">选择学生：</span>
-        <Select
-          v-model="selectedStudent"
-          filterable
-          placeholder="请选择学生"
-          style="width: 250px;"
-        >
-          <Option
-            v-for="student in students"
-            :key="student.id"
-            :value="student.id"
-            :label="student.name"
+        <template v-if="!isStudentMode">
+          <span class="filter-label">选择学生：</span>
+          <Select
+            v-model="selectedStudent"
+            filterable
+            placeholder="请选择学生"
+            style="width: 250px;"
           >
-            {{ student.name }} ({{ student.userName }})
-          </Option>
-        </Select>
+            <Option
+              v-for="student in students"
+              :key="student.id"
+              :value="student.id"
+              :label="student.name"
+            >
+              {{ student.name }} ({{ student.userName }})
+            </Option>
+          </Select>
+        </template>
+        <template v-else>
+          <span class="filter-label">当前学生：</span>
+          <Tag color="blue">{{ currentStudentName || '我' }}</Tag>
+        </template>
 
         <span class="filter-label" style="margin-left: 20px;">时间范围：</span>
         <Select v-model="timeRange" style="width: 150px;">
@@ -39,7 +45,7 @@
           style="margin-left: 20px;"
         >
           <Icon type="md-trending-up" />
-          查看进步
+          查看分析
         </Button>
       </div>
     </Card>
@@ -176,6 +182,13 @@
 
 <script>
 import * as echarts from 'echarts'
+import {
+  getLoginUser,
+  getPageStudents,
+  getStudentProgressStats,
+  getPageStudentExamLogs,
+  getPracticeLogs
+} from '@/api/index.js'
 
 export default {
   name: 'StudentProgress',
@@ -184,6 +197,8 @@ export default {
       loading: false,
       students: [],
       selectedStudent: null,
+      currentStudentName: '',
+      isStudentMode: false,
       timeRange: 'semester',
       progressData: [],
       summary: {
@@ -198,47 +213,187 @@ export default {
     }
   },
   mounted() {
-    this.loadStudents()
+    this.initPage()
   },
   methods: {
+    getToken() {
+      return this.$store.state.token || sessionStorage.getItem('token') || localStorage.getItem('token') || ''
+    },
+    async initPage() {
+      const token = this.getToken()
+      if (!token) {
+        this.$Message.error('登录状态已失效，请重新登录')
+        return
+      }
+
+      try {
+        const userResp = await getLoginUser(token)
+        const user = userResp?.data || {}
+        if (user.type === 2) {
+          this.isStudentMode = true
+          this.selectedStudent = user.id
+          this.currentStudentName = user.name || user.userName || '我'
+          await this.loadStudentSelfProgress()
+          return
+        }
+      } catch (error) {
+        console.error('加载登录信息失败', error)
+      }
+
+      await this.loadStudents()
+    },
     async loadStudents() {
       try {
-        const resp = await fetch('/api/students/page/?pageIndex=1&pageSize=1000')
-        const data = await resp.json()
-        if (data.code === 0) {
-          this.students = data.data.data || []
+        const resp = await getPageStudents(1, 1000, '', '', '')
+        if (resp.code === 0) {
+          this.students = (resp.data && resp.data.data) || []
         }
       } catch (e) {
         console.error('加载学生列表失败', e)
       }
     },
     async loadProgress() {
-      if (!this.selectedStudent) {
+      if (this.isStudentMode) {
+        await this.loadStudentSelfProgress()
+        return
+      }
+
+      if (!this.selectedStudent && this.selectedStudent !== 0) {
         this.$Message.warning('请选择学生')
         return
       }
 
       this.loading = true
       try {
-        const url = `/api/statistics/student_progress/?studentId=${this.selectedStudent}&timeRange=${this.timeRange}`
-        const resp = await fetch(url)
-        const data = await resp.json()
-
-        if (data.code === 0) {
-          this.progressData = data.data.progressData
-          this.summary = data.data.summary
+        const resp = await getStudentProgressStats(this.selectedStudent, this.timeRange)
+        if (resp.code === 0) {
+          const payload = resp.data || {}
+          this.progressData = payload.progressData || []
+          this.summary = payload.summary || this.emptySummary()
           this.recentRecords = this.progressData.slice(-10).reverse()
           this.$nextTick(() => {
             this.renderCharts()
           })
         } else {
-          this.$Message.error(data.msg || '加载数据失败')
+          this.$Message.error(resp.msg || '加载数据失败')
         }
       } catch (e) {
         console.error('加载进步数据失败', e)
         this.$Message.error('加载数据失败')
       } finally {
         this.loading = false
+      }
+    },
+    async loadStudentSelfProgress() {
+      const token = this.getToken()
+      if (!token) {
+        this.$Message.error('登录状态已失效，请重新登录')
+        return
+      }
+
+      this.loading = true
+      try {
+        const [examResp, practiceResp] = await Promise.all([
+          getPageStudentExamLogs(1, 200, '', this.selectedStudent || '', ''),
+          getPracticeLogs(token)
+        ])
+
+        const examRows = ((examResp.data && examResp.data.data) || []).filter(item => item && Number(item.status) === 2)
+        const practiceRows = Array.isArray(practiceResp.data) ? practiceResp.data : []
+
+        const examProgress = examRows.map(item => {
+          const timeText = item.createTime || item.examTime || ''
+          return {
+            type: 'exam',
+            name: item.examName || '考试',
+            subject: item.projectName || '未分类',
+            score: Number(item.score || 0),
+            time: timeText,
+            date: String(timeText).slice(0, 10)
+          }
+        })
+
+        const practiceProgress = practiceRows
+          .filter(item => item && (item.status === 'completed' || Number(item.status) === 1 || Number(item.status) === 2))
+          .map(item => {
+            const timeText = item.submitTime || item.createTime || item.updateTime || ''
+            return {
+              type: 'practice',
+              name: item.paperTitle || item.title || item.name || '练习',
+              subject: item.projectName || item.subject || '未分类',
+              score: Number(item.score || 0),
+              time: timeText,
+              date: String(timeText).slice(0, 10)
+            }
+          })
+
+        const merged = [...examProgress, ...practiceProgress]
+          .filter(item => item.time)
+          .sort((left, right) => String(left.time).localeCompare(String(right.time)))
+
+        this.progressData = merged
+        this.summary = this.buildSummary(merged)
+        this.recentRecords = merged.slice(-10).reverse()
+
+        this.$nextTick(() => {
+          this.renderCharts()
+        })
+      } catch (error) {
+        console.error('加载学生个人学习分析失败', error)
+        this.$Message.error('加载学习分析失败')
+      } finally {
+        this.loading = false
+      }
+    },
+    emptySummary() {
+      return {
+        totalRecords: 0,
+        avgScore: 0,
+        improvement: 0,
+        improvementRate: 0,
+        subjectAverages: {}
+      }
+    },
+    buildSummary(records) {
+      if (!records.length) {
+        return this.emptySummary()
+      }
+
+      const avgScore = Number((records.reduce((sum, item) => sum + Number(item.score || 0), 0) / records.length).toFixed(2))
+      let improvement = 0
+      let improvementRate = 0
+
+      if (records.length >= 2) {
+        const firstScore = Number(records[0].score || 0)
+        const lastScore = Number(records[records.length - 1].score || 0)
+        improvement = Number((lastScore - firstScore).toFixed(2))
+        if (firstScore > 0) {
+          improvementRate = Number((((lastScore - firstScore) / firstScore) * 100).toFixed(2))
+        }
+      }
+
+      const subjectMap = {}
+      records.forEach(item => {
+        const subject = item.subject || '未分类'
+        if (!subjectMap[subject]) {
+          subjectMap[subject] = []
+        }
+        subjectMap[subject].push(Number(item.score || 0))
+      })
+
+      const subjectAverages = {}
+      Object.keys(subjectMap).forEach(subject => {
+        const scores = subjectMap[subject]
+        const value = scores.reduce((sum, score) => sum + score, 0) / scores.length
+        subjectAverages[subject] = Number(value.toFixed(2))
+      })
+
+      return {
+        totalRecords: records.length,
+        avgScore,
+        improvement,
+        improvementRate,
+        subjectAverages
       }
     },
     renderCharts() {

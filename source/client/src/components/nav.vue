@@ -3,7 +3,7 @@
 		<Dropdown @on-click="handleUser" class="user-dropdown">
 			<a href="javascript:void(0)" class="user-info">
 				<Avatar icon="ios-person" size="small" class="user-avatar" />
-				<span class="user-text">个人中心</span>
+				<span class="user-text">{{ currentUserName || '个人中心' }}</span>
 				<Icon type="ios-arrow-down" class="dropdown-icon"></Icon>
 			</a>
 			<template #list>
@@ -229,6 +229,7 @@ import {
 export default {
 	data() {
 		return {
+			currentUserName: '',
 			showInfoFlag: false,
 			showPwdFlag: false,
 			pwdForm: {
@@ -246,13 +247,36 @@ export default {
 			},
 		}
 	},
+	mounted() {
+		this.loadCurrentUser();
+	},
 	methods: {
+		loadCurrentUser() {
+			const token = (this.$store && this.$store.state && this.$store.state.token) || sessionStorage.getItem('token') || '';
+			if (!token) {
+				this.currentUserName = '个人中心';
+				return;
+			}
+
+			getLoginUser(token)
+				.then(resp => {
+					if (resp && resp.code === 0 && resp.data) {
+						this.currentUserName = resp.data.name || resp.data.userName || '个人中心';
+					} else {
+						this.currentUserName = '个人中心';
+					}
+				})
+				.catch(() => {
+					this.currentUserName = '个人中心';
+				});
+		},
 		showInfoWin(){
 
 			getLoginUser(this.$store.state.token).then(resp =>{
 
 				this.infoForm.userName = resp.data.userName;
 				this.infoForm.name = resp.data.name;
+				this.currentUserName = resp.data.name || resp.data.userName || this.currentUserName;
 				this.infoForm.gender = resp.data.gender;
 				this.infoForm.age = resp.data.age;
 

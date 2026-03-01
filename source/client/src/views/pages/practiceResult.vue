@@ -82,17 +82,17 @@
                     </div>
                     
                     <div class="question-content">
-                        <div class="content-text">{{ answer.questionContent }}</div>
+                        <div class="content-text"><QuestionContentRenderer :content="answer.questionContent" /></div>
                         <div v-if="answer.options && answer.options.length > 0" class="options-list">
                             <div 
                                 v-for="(option, optIndex) in answer.options" 
                                 :key="optIndex"
                                 class="option-item"
                                 :class="{ 
-                                    'selected': answer.studentAnswer == optIndex,
-                                    'correct': answer.correctAnswer == optIndex 
+                                    'selected': answer.studentAnswer == option.id,
+                                    'correct': answer.correctAnswer == option.id 
                                 }">
-                                {{ String.fromCharCode(65 + optIndex) }}. {{ option }}
+                                {{ String.fromCharCode(65 + optIndex) }}. {{ option.name }}
                             </div>
                         </div>
                     </div>
@@ -100,15 +100,15 @@
                     <div class="answer-section">
                         <div class="answer-row">
                             <span class="label">您的答案：</span>
-                            <span class="value student-answer">{{ formatAnswer(answer.studentAnswer, answer.questionType) }}</span>
+                            <span class="value student-answer">{{ formatAnswer(answer.studentAnswer, answer.questionType, answer.options) }}</span>
                         </div>
                         <div class="answer-row">
                             <span class="label">正确答案：</span>
-                            <span class="value correct-answer">{{ formatAnswer(answer.correctAnswer, answer.questionType) }}</span>
+                            <span class="value correct-answer">{{ formatAnswer(answer.correctAnswer, answer.questionType, answer.options) }}</span>
                         </div>
                         <div v-if="answer.analyse" class="answer-row">
                             <span class="label">题目解析：</span>
-                            <span class="value analyse">{{ answer.analyse }}</span>
+                            <span class="value analyse"><QuestionContentRenderer :content="answer.analyse" compact /></span>
                         </div>
                         <div v-if="answer.aiConfidence !== null || answer.aiFeedback || answer.aiAnalysis" class="answer-row">
                             <span class="label">AI评分：</span>
@@ -123,10 +123,10 @@
                                         <span v-if="answer.aiModel" style="margin-left:12px;color:#888;">模型：{{ answer.aiModel }}</span>
                                     </div>
                                     <div v-if="answer.aiFeedback">
-                                        <span style="color:#888;">反馈：</span>{{ answer.aiFeedback }}
+                                        <span style="color:#888;">反馈：</span><QuestionContentRenderer :content="answer.aiFeedback" compact />
                                     </div>
                                     <div v-if="answer.aiAnalysis">
-                                        <span style="color:#888;">分析：</span>{{ answer.aiAnalysis }}
+                                        <span style="color:#888;">分析：</span><QuestionContentRenderer :content="answer.aiAnalysis" compact />
                                     </div>
                                     <div v-if="answer.needsReview">
                                         <Button size="small" type="warning" @click="openReview(answer)">人工覆核</Button>
@@ -180,7 +180,7 @@
     padding: 24px;
     background: linear-gradient(135deg, #1890ff 0%, #0050b3 100%);
     border-radius: 12px;
-    color: white;
+    color: #000;
 }
 
 .header-content {
@@ -192,7 +192,7 @@
 
 .header-icon {
     font-size: 32px;
-    color: rgba(255, 255, 255, 0.9);
+    color: #000;
 }
 
 .header-text h2 {
@@ -460,9 +460,14 @@
 <script>
 import { getPracticeAnswers } from '../../api/index.js';
 import http from '../../utils/http.js';
+import QuestionContentRenderer from '@/components/QuestionContentRenderer.vue';
+import { triggerBlobDownload } from '@/utils/fileDownload';
 
 export default {
     name: 'PracticeResult',
+    components: {
+        QuestionContentRenderer
+    },
     data() {
         return {
             logId: null,
@@ -526,15 +531,7 @@ export default {
                 const api = await import('../../api/index.js')
                 const resp = await api.exportPracticeAnswers(this.logId)
                 const data = resp.data || resp
-                const blob = new Blob([data], { type: 'text/csv;charset=utf-8;' })
-                const url = URL.createObjectURL(blob)
-                const a = document.createElement('a')
-                a.href = url
-                a.download = 'practice_answers.csv'
-                document.body.appendChild(a)
-                a.click()
-                document.body.removeChild(a)
-                URL.revokeObjectURL(url)
+                triggerBlobDownload(data, 'practice_answers.csv', 'text/csv;charset=utf-8;')
             }catch(e){
                 console.error('导出答题明细失败', e)
                 this.$Message.error('导出答题明细失败')
@@ -576,10 +573,14 @@ export default {
             return texts[type] || '未知类型';
         },
         
-        formatAnswer(answer, type) {
-            if (type === 0) {
-                // 选择题，显示选项字母
-                return String.fromCharCode(65 + parseInt(answer));
+        formatAnswer(answer, type, options) {
+            if (type === 0 && options && options.length > 0) {
+                // 选择题：通过选项ID找到对应选项，显示为字母+选项名
+                const idx = options.findIndex(opt => String(opt.id) === String(answer));
+                if (idx >= 0) {
+                    return String.fromCharCode(65 + idx) + '. ' + options[idx].name;
+                }
+                return answer || '未作答';
             }
             return answer || '未作答';
         },

@@ -114,6 +114,7 @@ class AIView(BaseView):
                 question_type=question_type,
                 count=count
             )
+            generation_quality = getattr(ai_utils, 'last_generation_report', {})
 
             if not questions:
                 return BaseView.error('AI生成题目失败')
@@ -125,7 +126,8 @@ class AIView(BaseView):
                 'subject': subject,
                 'topic': topic,
                 'difficulty': difficulty,
-                'question_type': question_type
+                'question_type': question_type,
+                'generationQuality': generation_quality
             })
 
         except Exception as e:
@@ -141,7 +143,7 @@ class AIView(BaseView):
 
             question_content = request.GET.get('questionContent')
             correct_answer = request.GET.get('correctAnswer')
-            student_answer = request.GET.get('studentAnswer')
+            student_answer = request.GET.get('studentAnswer') or request.GET.get('wrongAnswer')
             question_type = int(request.GET.get('questionType', 0))
 
             if not all([question_content, correct_answer, student_answer]):
@@ -152,7 +154,7 @@ class AIView(BaseView):
             result = ai_utils.ai_analyze_wrong_answer(
                 question_content=question_content,
                 correct_answer=correct_answer,
-                student_answer=student_answer,
+                wrong_answer=student_answer,
                 question_type=question_type
             )
 

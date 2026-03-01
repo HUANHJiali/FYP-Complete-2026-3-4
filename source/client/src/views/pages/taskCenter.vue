@@ -46,6 +46,7 @@
                             <Option value="not_started">未开始</Option>
                             <Option value="in_progress">进行中</Option>
                             <Option value="completed">已完成</Option>
+                            <Option value="overdue">已逾期</Option>
                         </Select>
                     </FormItem>
                     <FormItem class="form-item">
@@ -77,16 +78,16 @@
                 v-for="task in filteredTasks" 
                 :key="task.id" 
                 class="task-card"
-                :class="{ 'completed': task.status === 'completed' }">
+                :class="{ 'completed': getTaskLifecycle(task) === 'completed' }">
                 <template #title>
                     <div class="task-header">
                         <div class="task-title">
                             <Icon :type="getTaskIcon(task.type)" class="task-icon" />
                             <span>{{ task.title }}</span>
                             <Tag 
-                                :type="getStatusType(task.status)" 
+                                :type="getStatusType(getTaskLifecycle(task))" 
                                 class="status-tag">
-                                {{ getStatusText(task.status) }}
+                                {{ getStatusText(getTaskLifecycle(task)) }}
                             </Tag>
                         </div>
                         <div class="task-meta">
@@ -117,11 +118,11 @@
                             <Icon type="ios-star" />
                             <span>分值：{{ task.score }}分</span>
                         </div>
-                        <div v-if="task.status === 'completed'" class="info-item">
+                        <div v-if="getTaskLifecycle(task) === 'completed'" class="info-item">
                             <Icon type="ios-trophy" />
                             <span>得分：{{ task.score }}分</span>
                         </div>
-                        <div v-if="task.status === 'completed'" class="info-item">
+                        <div v-if="getTaskLifecycle(task) === 'completed'" class="info-item">
                             <Icon type="ios-checkmark-circle" />
                             <span>正确率：{{ task.accuracy }}%</span>
                         </div>
@@ -133,23 +134,25 @@
 
                     <div class="task-actions">
                         <Button 
-                            v-if="task.status === 'not_started'"
+                            v-if="getTaskLifecycle(task) === 'not_started'"
                             type="primary" 
                             @click="startTask(task)"
+                            :disabled="isTaskOverdue(task)"
                             class="start-btn btn-ripple">
                             <Icon type="ios-play" />
-                            开始任务
+                            {{ isTaskOverdue(task) ? '任务已逾期' : '开始任务' }}
                         </Button>
                         <Button 
-                            v-else-if="task.status === 'in_progress'"
+                            v-else-if="getTaskLifecycle(task) === 'in_progress'"
                             type="warning" 
                             @click="continueTask(task)"
+                            :disabled="isTaskOverdue(task)"
                             class="continue-btn btn-ripple">
                             <Icon type="ios-play" />
-                            继续任务
+                            {{ isTaskOverdue(task) ? '任务已逾期' : '继续任务' }}
                         </Button>
                         <Button 
-                            v-else-if="task.status === 'completed'"
+                            v-else-if="getTaskLifecycle(task) === 'completed'"
                             type="success" 
                             @click="viewResult(task)"
                             class="view-btn btn-ripple">
@@ -206,7 +209,7 @@
     padding: 24px;
     background: linear-gradient(135deg, #1890ff 0%, #0050b3 100%);
     border-radius: 12px;
-    color: white;
+    color: #000;
 }
 
 .header-content {
@@ -218,7 +221,7 @@
 
 .header-icon {
     font-size: 32px;
-    color: rgba(255, 255, 255, 0.9);
+    color: #000;
 }
 
 .header-text h2 {
@@ -536,6 +539,7 @@
 
 <script>
 import { getAllProjects, getStudentTasks, startTask } from '../../api/index.js';
+import { normalizeLifecycleStatus, getLifecycleTagType, getLifecycleText } from '../../utils/lifecycleStatus';
 
 export default {
     name: 'TaskCenter',
@@ -557,7 +561,7 @@ export default {
             let filtered = this.tasks;
             
             if (this.filterForm.status) {
-                filtered = filtered.filter(task => task.status === this.filterForm.status);
+                filtered = filtered.filter(task => this.getTaskLifecycle(task) === this.filterForm.status);
             }
             
             if (this.filterForm.projectId) {
@@ -567,24 +571,22 @@ export default {
             return filtered;
         },
         completedTasks() {
-            return this.tasks.filter(task => task.status === 'completed').length;
+            return this.tasks.filter(task => this.getTaskLifecycle(task) === 'completed').length;
         },
         totalTasks() {
             return this.tasks.length;
         },
         inProgressTasks() {
-            return this.tasks.filter(task => task.status === 'in_progress').length;
+            return this.tasks.filter(task => this.getTaskLifecycle(task) === 'in_progress').length;
         },
         overdueTasks() {
-            const now = new Date();
-            return this.tasks.filter(task => {
-                if (task.status === 'completed' || !task.deadline) return false;
-                const d = new Date(task.deadline);
-                return d < now;
-            }).length;
+            return this.tasks.filter(task => this.getTaskLifecycle(task) === 'overdue').length;
         }
     },
     methods: {
+        getTaskLifecycle(task) {
+            return normalizeLifecycleStatus(task);
+        },
         // 加载任务列表
         loadTasks() {
             this.loading = true;
@@ -611,6 +613,10 @@ export default {
         
         // 开始任务
         startTask(task) {
+            if (this.isTaskOverdue(task)) {
+                this.$Message.warning('任务已截止，不能开始');
+                return;
+            }
             const token = this.$store.state.token || sessionStorage.getItem('token');
             
             startTask(token, task.id).then(resp => {
@@ -636,6 +642,10 @@ export default {
         
         // 继续任务
         continueTask(task) {
+            if (this.isTaskOverdue(task)) {
+                this.$Message.warning('任务已截止，不能继续作答');
+                return;
+            }
             this.$Message.info(`继续任务：${task.title}`);
             // 跳转到答题页面，继续现有任务
             this.$router.push({
@@ -699,21 +709,11 @@ export default {
         },
         
         getStatusType(status) {
-            const types = {
-                'not_started': 'warning',
-                'in_progress': 'processing',
-                'completed': 'success'
-            };
-            return types[status] || 'default';
+            return getLifecycleTagType(status);
         },
         
         getStatusText(status) {
-            const texts = {
-                'not_started': '未开始',
-                'in_progress': '进行中',
-                'completed': '已完成'
-            };
-            return texts[status] || '未知';
+            return getLifecycleText(status);
         },
         
         getTaskTypeText(type) {
@@ -731,7 +731,8 @@ export default {
         },
 
         getDeadlineClass(task) {
-            if (!task.deadline || task.status === 'completed') return '';
+            if (!task.deadline || this.getTaskLifecycle(task) === 'completed') return '';
+            if (this.getTaskLifecycle(task) === 'overdue') return 'overdue';
             const now = new Date();
             const d = new Date(task.deadline);
             const diff = d.getTime() - now.getTime();
@@ -742,7 +743,8 @@ export default {
         },
 
         getDeadlineBadge(task) {
-            if (!task.deadline || task.status === 'completed') return '';
+            if (!task.deadline || this.getTaskLifecycle(task) === 'completed') return '';
+            if (this.getTaskLifecycle(task) === 'overdue') return '已逾期';
             const now = new Date();
             const d = new Date(task.deadline);
             const diff = d.getTime() - now.getTime();
@@ -752,9 +754,15 @@ export default {
             return '';
         },
 
+        isTaskOverdue(task) {
+            return this.getTaskLifecycle(task) === 'overdue';
+        },
+
         getTaskProgress(task) {
-            if (task.status === 'completed') return 100;
-            if (task.status === 'in_progress') return 60;
+            const lifecycle = this.getTaskLifecycle(task);
+            if (lifecycle === 'completed') return 100;
+            if (lifecycle === 'in_progress') return 60;
+            if (lifecycle === 'overdue') return 20;
             return 10;
         },
 

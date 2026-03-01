@@ -28,6 +28,9 @@ const AdminTasks = () => import(/* webpackChunkName: "admin-tasks" */ '../views/
 const AdminMessages = () => import(/* webpackChunkName: "admin-messages" */ '../views/pages/adminMessages.vue')
 const AdminSubjects = () => import(/* webpackChunkName: "admin-subjects" */ '../views/pages/adminSubjects.vue')
 const DataVisualization = () => import(/* webpackChunkName: "data-visualization" */ '../views/pages/dataVisualization.vue')
+const DataDashboard = () => import(/* webpackChunkName: "data-dashboard" */ '../views/pages/DataDashboard.vue')
+const ClassComparison = () => import(/* webpackChunkName: "class-comparison" */ '../views/pages/ClassComparison.vue')
+const StudentProgress = () => import(/* webpackChunkName: "student-progress" */ '../views/pages/StudentProgress.vue')
 const Colleges = () => import(/* webpackChunkName: "colleges" */ '../views/pages/colleges.vue')
 const Grades = () => import(/* webpackChunkName: "grades" */ '../views/pages/grades.vue')
 const Teachers = () => import(/* webpackChunkName: "teachers" */ '../views/pages/teachers.vue')
@@ -44,6 +47,7 @@ const routes = [
   },
   {
     path: '/home',
+    alias: '/welcome',
     name: 'home',
     component: Home,
     children: [
@@ -172,6 +176,21 @@ const routes = [
         path: 'dataVisualization',
         name: 'dataVisualization',
         component: DataVisualization
+      },
+      {
+        path: 'dataDashboard',
+        name: 'dataDashboard',
+        component: DataDashboard
+      },
+      {
+        path: 'classComparison',
+        name: 'classComparison',
+        component: ClassComparison
+      },
+      {
+        path: 'studentProgress',
+        name: 'studentProgress',
+        component: StudentProgress
       },
       // 基础数据管理
       {

@@ -147,11 +147,24 @@
     <Modal v-model="showDeleteModal" title="确认删除" @on-ok="confirmDelete">
       <p>确定要删除任务 "{{ taskToDelete.title }}" 吗？此操作不可恢复。</p>
     </Modal>
+
+    <!-- 题目管理弹窗 -->
+    <Modal v-model="showQuestionsModal" :title="'任务题目 - ' + currentTaskTitle" width="800" :footer-hide="true">
+      <Spin v-if="taskQuestionsLoading" fix />
+      <div v-else-if="taskQuestions.length === 0" style="text-align:center;padding:32px;color:#999">该任务暂无题目</div>
+      <Table v-else :columns="[
+        { title: '序号', type: 'index', width: 60 },
+        { title: '题目内容', key: 'name', minWidth: 200 },
+        { title: '题型', key: 'type', width: 80, render: (h, p) => h('span', ['选择','填空','判断','编程'][p.row.type] || p.row.type) },
+        { title: '分值', key: 'score', width: 80 }
+      ]" :data="taskQuestions" />
+    </Modal>
   </div>
 </template>
 
 <script>
-import { getAdminTasks, addAdminTask, updateAdminTask, deleteAdminTask, getAllProjects, getAllGrades } from '@/api'
+import { getAdminTasks, addAdminTask, updateAdminTask, deleteAdminTask, getAllProjects, getAllGrades, getTaskQuestions } from '@/api'
+import { formatDate } from '@/utils/date'
 
 export default {
   name: 'AdminTasks',
@@ -238,7 +251,12 @@ export default {
         ]
       },
       showDeleteModal: false,
-      taskToDelete: {}
+      taskToDelete: {},
+      // 题目管理弹窗
+      showQuestionsModal: false,
+      currentTaskTitle: '',
+      taskQuestions: [],
+      taskQuestionsLoading: false
     }
   },
   mounted() {
@@ -339,20 +357,60 @@ export default {
     },
 
     manageQuestions(task) {
-      // 跳转到任务题目管理页面
-      this.$router.push(`/admin/taskQuestions?taskId=${task.id}`)
+      this.currentTaskTitle = task.title
+      this.taskQuestions = []
+      this.showQuestionsModal = true
+      this.taskQuestionsLoading = true
+      getTaskQuestions(task.id).then(resp => {
+        if (resp.code === 0 || resp.data) {
+          this.taskQuestions = resp.data || []
+        } else {
+          this.$Message.error(resp.msg || '获取题目列表失败')
+        }
+      }).catch(() => {
+        this.$Message.error('获取题目列表失败')
+      }).finally(() => {
+        this.taskQuestionsLoading = false
+      })
     },
 
     async handleSubmit() {
       try {
-        const valid = await this.$refs.formRef.validate()
-        if (!valid) return
+        if (!this.formData.title || !String(this.formData.title).trim()) {
+          this.$Message.warning('请输入任务标题')
+          return
+        }
+        if (!this.formData.type) {
+          this.$Message.warning('请选择任务类型')
+          return
+        }
+        if (!this.formData.project) {
+          this.$Message.warning('请选择学科')
+          return
+        }
+        if (!this.formData.grade) {
+          this.$Message.warning('请选择年级')
+          return
+        }
+        if (!this.formData.deadline) {
+          this.$Message.warning('请选择截止时间')
+          return
+        }
+        if (!this.formData.score && this.formData.score !== 0) {
+          this.$Message.warning('请输入任务分值')
+          return
+        }
+
+        const payload = {
+          ...this.formData,
+          deadline: this.formData.deadline instanceof Date ? formatDate(this.formData.deadline) : this.formData.deadline
+        }
 
         let response
         if (this.isEdit) {
-          response = await updateAdminTask(this.formData)
+          response = await updateAdminTask(payload)
         } else {
-          response = await addAdminTask(this.formData)
+          response = await addAdminTask(payload)
         }
 
         if (response.code === 0) {
@@ -364,7 +422,8 @@ export default {
         }
       } catch (error) {
         console.error('操作失败:', error)
-        this.$Message.error('操作失败')
+        const msg = error?.msg || error?.response?.data?.msg || '操作失败'
+        this.$Message.error(msg)
       }
     },
 

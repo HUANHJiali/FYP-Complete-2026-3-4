@@ -285,7 +285,7 @@ export default {
                             sessionStorage.setItem("token", res.data.token);
                             initMenu(this.$router, this.$store);
                             this.$Message.success('登录成功');
-                            this.$router.push('/welcome');
+                            // 路由跳转由 initMenu 内部处理，此处不重复 push
                         }else{
                             // 根据错误码显示不同提示
                             if (res.code === 401) {

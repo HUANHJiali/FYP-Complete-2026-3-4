@@ -11,6 +11,7 @@ from django.core.files.base import ContentFile
 from django.conf import settings
 
 from app import models
+from app.permissions import get_user_from_request
 from comm.BaseView import BaseView
 
 
@@ -26,6 +27,13 @@ class TaskAttachmentViews:
     
     # 最大文件大小 (50MB)
     MAX_FILE_SIZE = 50 * 1024 * 1024
+
+    @staticmethod
+    def _require_login(request):
+        user = get_user_from_request(request)
+        if not user:
+            return None, BaseView.error('用户未登录')
+        return user, None
     
     @staticmethod
     def upload_attachment(request):
@@ -39,6 +47,10 @@ class TaskAttachmentViews:
         返回:
             附件信息
         """
+        user, err = TaskAttachmentViews._require_login(request)
+        if err:
+            return err
+
         task_id = request.POST.get('taskId')
         uploaded_file = request.FILES.get('file')
         
@@ -85,7 +97,7 @@ class TaskAttachmentViews:
             filePath=saved_path,
             fileSize=uploaded_file.size,
             fileType=file_ext,
-            uploadedBy_id=request.POST.get('userId', '')
+            uploadedBy_id=user.id
         )
         
         return BaseView.successData({
@@ -107,6 +119,10 @@ class TaskAttachmentViews:
         返回:
             附件列表
         """
+        _, err = TaskAttachmentViews._require_login(request)
+        if err:
+            return err
+
         task_id = request.GET.get('taskId')
         
         if not task_id:
@@ -138,6 +154,10 @@ class TaskAttachmentViews:
         返回:
             文件下载
         """
+        _, err = TaskAttachmentViews._require_login(request)
+        if err:
+            return err
+
         attachment_id = request.GET.get('attachmentId')
         
         if not attachment_id:
@@ -175,6 +195,10 @@ class TaskAttachmentViews:
         返回:
             删除结果
         """
+        _, err = TaskAttachmentViews._require_login(request)
+        if err:
+            return err
+
         attachment_id = request.POST.get('attachmentId')
         
         if not attachment_id:

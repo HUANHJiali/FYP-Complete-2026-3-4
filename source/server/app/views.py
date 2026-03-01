@@ -29,7 +29,7 @@ from app.services.pagination_service import PaginationService
 from app.services.user_service import UserService
 import uuid
 import os
-from datetime import time
+from datetime import time, datetime
 import csv
 import io
 import logging
@@ -1559,11 +1559,15 @@ class ExamLogsView(BaseView):
         pageIndex = request.GET.get('pageIndex', 1)
         pageSize = request.GET.get('pageSize', 10)
         examName = request.GET.get('examName')
-        token = request.GET.get('token')
+        token = request.GET.get('token') or request.META.get('HTTP_AUTHORIZATION', '').replace('Bearer ', '')
         gradeId = request.GET.get('gradeId')
         projectId = request.GET.get('projectId')
 
-        query = Q(exam__teacher__id=cache.get(token))
+        teacher_id = cache.get(token) if token else None
+        if not teacher_id:
+            return BaseView.error('用户未登录')
+
+        query = Q(exam__teacher__id=teacher_id)
         if SysUtil.isExit(examName):
             query = query & Q(exam__name__contains=examName)
         if SysUtil.isExit(gradeId):
@@ -2475,11 +2479,6 @@ class StudentPracticeView(BaseView):
                     answer.aiFeedback = ai_result.get('feedback')
                     answer.aiAnalysis = ai_result.get('analysis')
                     answer.aiModel = ai_result.get('model')
-                    # 保存AI细节
-                    answer.aiConfidence = ai_result.get('confidence')
-                    answer.aiFeedback = ai_result.get('feedback')
-                    answer.aiAnalysis = ai_result.get('analysis')
-                    answer.aiModel = ai_result.get('model')
 
                     # 保存AI分析结果到题目分析字段
                     if not practise.analyse or practise.analyse.strip() == '':
@@ -2523,7 +2522,7 @@ class StudentPracticeView(BaseView):
 
         # 计算用时
         startTime = DateUtil.parseDateTime(practiceLog.startTime)
-        endTime = DateUtil.getNowDateTime()
+        endTime = datetime.now()
         usedTime = int((endTime - startTime).total_seconds() / 60)
 
         # 更新练习记录
@@ -2690,10 +2689,10 @@ class StudentPracticeView(BaseView):
                 'needsReview': needsReview
             }
 
-            # 如果是选择题，获取选项
+            # 如果是选择题，获取选项（含ID，供前端映射答案显示）
             if practise.type == 0:
-                options = models.Options.objects.filter(practise=practise)
-                answerData['options'] = [opt.name for opt in options]
+                options = models.Options.objects.filter(practise=practise).order_by('id')
+                answerData['options'] = [{'id': opt.id, 'name': opt.name} for opt in options]
 
             resl.append(answerData)
 
@@ -2921,7 +2920,7 @@ class TasksView(BaseView):
                 'logId': existingLog.id if existingLog else None,
                 'startTime': existingLog.startTime if existingLog else None,
                 'endTime': existingLog.endTime if existingLog else None,
-                'score': existingLog.score if existingLog else None,
+                'studentScore': existingLog.score if existingLog else None,
                 'accuracy': existingLog.accuracy if existingLog else None
             }
 
@@ -3953,2101 +3952,203 @@ class AdminView(BaseView):
     # 获取管理员仪表板数据
     @staticmethod
     def fillAllSubjectsMinimum(request):
-        """为所有学科补齐基础题量：选择10、填空10、判断10、编程2。
-        仅对缺口进行补齐，已满足的不再生成。
-        可选参数：
-        - topic: 生成主题，默认 "基础知识与核心概念"
-        - difficulty: 难度，默认 medium
-        - counts: 自定义各类型数量，例如 '0:10,1:10,2:10,3:2'
-        """
-        try:
-            from comm.AIUtils import AIUtils
-            # 解析数量映射
-            counts_str = request.POST.get('counts', '0:10,1:10,2:10,3:2')
-            default_counts = {0: 10, 1: 10, 2: 10, 3: 2}
-            counts_map = dict(default_counts)
-            try:
-                pairs = [p for p in counts_str.split(',') if ':' in p]
-                for p in pairs:
-                    k, v = p.split(':', 1)
-                    k_i, v_i = int(k), int(v)
-                    if k_i in [0, 1, 2, 3] and v_i >= 0:
-                        counts_map[k_i] = v_i
-            except Exception:
-                counts_map = default_counts
-            topic = request.POST.get('topic', '基础知识与核心概念')
-            difficulty = request.POST.get('difficulty', 'medium')
-            ai = AIUtils()
-            results = []
-            total_created = 0
+        from app.views.admin_question_views import AdminQuestionView
+        return AdminQuestionView.fill_all_subjects_minimum(request)
 
-            # 批量统计所有学科的题目数量，避免N+1查询
-            from django.db.models import Count, Q
-
-            # 使用缓存获取项目列表
-            cache_key = 'projects:all_ids'
-            subject_ids = cache.get(cache_key)
-            if subject_ids is None:
-                subject_ids = list(models.Projects.objects.all().values_list('id', flat=True))
-                cache.set(cache_key, subject_ids, 3600)  # 缓存1小时
-
-            # 批量统计各类型题目数量
-            type_counts = models.Practises.objects.filter(project_id__in=subject_ids).values(
-                'project_id', 'type'
-            ).annotate(count=Count('id'))
-
-            # 构建学科题目数量映射 {project_id: {type: count}}
-            subject_question_counts = {sid: {0: 0, 1: 0, 2: 0, 3: 0} for sid in subject_ids}
-            for tc in type_counts:
-                subject_question_counts[tc['project_id']][tc['type']] = tc['count']
-
-            # 批量统计选择题（type=0）中选项数=4的题目数量
-            valid_choice_counts = models.Options.objects.filter(
-                practise__type=0, practise__project_id__in=subject_ids
-            ).values('practise_id').annotate(c=Count('id')).filter(c=4)
-
-            # 统计每个学科的有效选择题数量
-            valid_choice_map = {sid: 0 for sid in subject_ids}
-            for vc in valid_choice_counts:
-                practise = models.Practises.objects.filter(id=vc['practise_id']).first()
-                if practise:
-                    valid_choice_map[practise.project_id] += 1
-
-            # 遍历所有学科
-            for subject in all_subjects:
-                created_by_type = {0: 0, 1: 0, 2: 0, 3: 0}
-
-                # 使用预计算的统计数据
-                counts = subject_question_counts.get(subject.id, {0: 0, 1: 0, 2: 0, 3: 0})
-                valid_choice = valid_choice_map.get(subject.id, 0)
-
-                need_0 = max(0, int(counts_map.get(0, 10)) - valid_choice)
-                need_1 = max(0, int(counts_map.get(1, 10)) - counts[1])
-                need_2 = max(0, int(counts_map.get(2, 10)) - counts[2])
-                need_3 = max(0, int(counts_map.get(3, 2)) - counts[3])
-                need_map = {0: need_0, 1: need_1, 2: need_2, 3: need_3}
-
-                # 逐类补齐
-                for t, need in need_map.items():
-                    if need <= 0:
-                        continue
-                    qs = ai.ai_generate_questions(subject=subject.name, topic=topic, difficulty=difficulty,
-                                                  question_type=int(t), count=int(need)) or []
-                    for q in qs:
-                        try:
-                            pr = models.Practises.objects.create(
-                                name=q.get('content', ''),
-                                type=int(t),
-                                project=subject,
-                                answer=q.get('answer', ''),
-                                analyse=q.get('analysis', ''),
-                                createTime=DateUtil.getNowDateTime()
-                            )
-                            if int(t) == 0 and q.get('options'):
-                                for opt in q['options']:
-                                    models.Options.objects.create(practise=pr, name=opt)
-                            created_by_type[int(t)] += 1
-                            total_created += 1
-                        except Exception as ie:
-                            print(f'学科{subject.id}生成失败(type={t}): {str(ie)}')
-                # 汇总
-                results.append({
-                    'subjectId': subject.id,
-                    'subjectName': subject.name,
-                    'createdByType': created_by_type
-                })
-
-            return BaseView.successData({
-                'createdTotal': total_created,
-                'list': results
-            })
-        except Exception as e:
-            return BaseView.error(f'补齐失败: {str(e)}')
-
+    @staticmethod
     def getDashboard(request):
-        try:
-            # 获取统计数据
-            total_users = models.Users.objects.count()
-            total_students = models.Users.objects.filter(type=2).count()
-            total_teachers = models.Users.objects.filter(type=1).count()
-            total_admins = models.Users.objects.filter(type=0).count()
-            total_exams = models.Exams.objects.count()
-            total_questions = models.Practises.objects.count()
-            total_tasks = models.Tasks.objects.count()
-
-            # 获取本月新增数据
-            from datetime import datetime, timedelta
-            now = datetime.now()
-            month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-            day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-
-            monthly_exams = models.Exams.objects.filter(
-                createTime__gte=month_start.strftime('%Y-%m-%d %H:%M:%S')).count()
-            monthly_questions = models.Practises.objects.filter(
-                createTime__gte=month_start.strftime('%Y-%m-%d %H:%M:%S')).count()
-            monthly_users = models.Users.objects.filter(
-                createTime__gte=month_start.strftime('%Y-%m-%d %H:%M:%S')).count()
-
-            # 用户活跃度：最近7天有练习/任务/考试记录的用户数
-            week_ago = now - timedelta(days=7)
-            # 按行为近似：有练习/任务/考试记录的去重人数
-            active_practice = models.StudentPracticeLogs.objects.filter(
-                startTime__gte=week_ago.strftime('%Y-%m-%d %H:%M:%S')).values_list('student_id', flat=True)
-            active_task = models.StudentTaskLogs.objects.filter(
-                startTime__gte=week_ago.strftime('%Y-%m-%d %H:%M:%S')).values_list('student_id', flat=True)
-            active_exam = models.ExamLogs.objects.filter(createTime__gte=week_ago.strftime(
-                '%Y-%m-%d %H:%M:%S')).values_list('student_id', flat=True)
-            active_set = set(list(active_practice) + list(active_task) + list(active_exam))
-            active_users = len(active_set)
-
-            # AI相关统计
-            # AI评分次数（有aiConfidence的记录）
-            from django.db.models import Q
-            ai_scoring_count = models.StudentPracticeAnswers.objects.filter(
-                aiConfidence__isnull=False
-            ).count()
-            ai_scoring_count += models.StudentTaskAnswers.objects.filter(
-                aiConfidence__isnull=False
-            ).count()
-
-            # 今日AI评分次数
-            day_start_str = day_start.strftime('%Y-%m-%d %H:%M:%S')
-            today_ai_scoring = models.StudentPracticeAnswers.objects.filter(
-                aiConfidence__isnull=False,
-                answerTime__gte=day_start_str
-            ).count()
-            today_ai_scoring += models.StudentTaskAnswers.objects.filter(
-                aiConfidence__isnull=False,
-                answerTime__gte=day_start_str
-            ).count()
-
-            # 基于错题生成练习次数（通过错题本相关功能）
-            # 这里统计错题本中的记录数作为参考
-            wrong_question_practices = models.WrongQuestions.objects.count()
-
-            # 今日学习行为速览
-            today_practices = models.StudentPracticeLogs.objects.filter(startTime__gte=day_start_str).count()
-            today_tasks = models.StudentTaskLogs.objects.filter(startTime__gte=day_start_str).count()
-            today_completed_practices = models.StudentPracticeLogs.objects.filter(
-                status='completed', endTime__gte=day_start_str
-            ).count()
-            today_completed_tasks = models.StudentTaskLogs.objects.filter(
-                status='completed', endTime__gte=day_start_str
-            ).count()
-
-            # 通过率（近7天）
-            week_ago_str = week_ago.strftime('%Y-%m-%d %H:%M:%S')
-            exams_7d = models.ExamLogs.objects.filter(status=2, createTime__gte=week_ago_str)
-            practices_7d = models.StudentPracticeLogs.objects.filter(status='completed', startTime__gte=week_ago_str)
-            import itertools
-            exam_scores = [e['score'] for e in exams_7d.values('score')]
-            practice_scores = [p['score'] for p in practices_7d.values('score')]
-            all_scores = list(itertools.chain(exam_scores, practice_scores))
-            total_completed = len(all_scores)
-            passed = len([s for s in all_scores if (s or 0) >= 60])
-            pass_rate = round(passed / total_completed * 100, 2) if total_completed > 0 else 0
-
-            # 近7天趋势数据
-            trends_7d = {
-                'days': [],
-                'practices': [],
-                'tasks': []
-            }
-            for i in range(7):
-                d = now - timedelta(days=6 - i)
-                d0 = d.replace(hour=0, minute=0, second=0, microsecond=0)
-                d1 = d0 + timedelta(days=1)
-                d0s, d1s = d0.strftime('%Y-%m-%d %H:%M:%S'), d1.strftime('%Y-%m-%d %H:%M:%S')
-                trends_7d['days'].append(d.strftime('%m-%d'))
-                trends_7d['practices'].append(
-                    models.StudentPracticeLogs.objects.filter(
-                        status='completed', endTime__gte=d0s, endTime__lt=d1s).count()
-                )
-                trends_7d['tasks'].append(
-                    models.StudentTaskLogs.objects.filter(status='completed', endTime__gte=d0s, endTime__lt=d1s).count()
-                )
-
-            return BaseView.successData({
-                'overview': {
-                    'total_users': total_users,
-                    'total_students': total_students,
-                    'total_teachers': total_teachers,
-                    'total_admins': total_admins,
-                    'total_exams': total_exams,
-                    'total_questions': total_questions,
-                    'total_tasks': total_tasks,
-                    'ai_scoring_count': ai_scoring_count,
-                    'wrong_question_practices': wrong_question_practices,
-                    'pass_rate': pass_rate
-                },
-                'monthly': {
-                    'new_exams': monthly_exams,
-                    'new_questions': monthly_questions,
-                    'new_users': monthly_users
-                },
-                'activity': {
-                    'active_users': active_users
-                },
-                'today': {
-                    'practices': today_practices,
-                    'tasks': today_tasks,
-                    'completed_practices': today_completed_practices,
-                    'completed_tasks': today_completed_tasks,
-                    'ai_scoring': today_ai_scoring
-                },
-                'trends_7d': trends_7d
-            })
-        except Exception as e:
-            return BaseView.error(f'获取仪表板数据失败: {str(e)}')
+        from app.views.admin_dashboard_views import AdminDashboardView
+        return AdminDashboardView.get_dashboard(request)
 
     @staticmethod
     def getDashboardCards(request):
-        """用于系统首页卡片：试卷总数、题目总数、用户活跃度、题目月数量"""
-        try:
-            from datetime import datetime
-            now = datetime.now()
-            month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-            day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            from datetime import timedelta
-            week_ago = now - timedelta(days=7)
-
-            # 今日新增
-            day_start_str = day_start.strftime('%Y-%m-%d %H:%M:%S')
-            today_questions = models.Practises.objects.filter(createTime__gte=day_start_str).count()
-            today_practices = models.StudentPracticeLogs.objects.filter(startTime__gte=day_start_str).count()
-            today_exams = models.Exams.objects.filter(createTime__gte=day_start_str).count()
-
-            # 近7天活跃用户（练习/任务/考试任一有记录）
-            week_ago_str = week_ago.strftime('%Y-%m-%d %H:%M:%S')
-            active_practice = models.StudentPracticeLogs.objects.filter(
-                startTime__gte=week_ago_str).values_list('student_id', flat=True)
-            active_task = models.StudentTaskLogs.objects.filter(
-                startTime__gte=week_ago_str).values_list(
-                'student_id', flat=True)
-            active_exam = models.ExamLogs.objects.filter(
-                createTime__gte=week_ago_str).values_list(
-                'student_id', flat=True)
-            active_users = len(set(list(active_practice) + list(active_task) + list(active_exam)))
-
-            # 通过率与平均分（近7天，练习完成 + 考试结束）
-            exams_7d = models.ExamLogs.objects.filter(status=2, createTime__gte=week_ago_str)
-            practices_7d = models.StudentPracticeLogs.objects.filter(
-                status='completed').filter(startTime__gte=week_ago_str)
-            import itertools
-            exam_scores = [e['score'] for e in exams_7d.values('score')]
-            practice_scores = [p['score'] for p in practices_7d.values('score')]
-            all_scores = list(itertools.chain(exam_scores, practice_scores))
-            total_completed = len(all_scores)
-            passed = len([s for s in all_scores if (s or 0) >= 60])
-            avg_score = round(sum(all_scores) / total_completed, 2) if total_completed > 0 else 0
-            pass_rate = round(passed / total_completed * 100, 2) if total_completed > 0 else 0
-
-            # 待人工覆核数（AI低置信/无置信 + 考试人工审核未完成）
-            import os as _os
-            threshold = float(_os.getenv('AI_CONFIDENCE_THRESHOLD', '0.6'))
-            from django.db.models import Q
-            pending_practice = models.StudentPracticeAnswers.objects.filter(
-                Q(aiConfidence__lt=threshold) | Q(aiConfidence__isnull=True)).count()
-            pending_task = models.StudentTaskAnswers.objects.filter(
-                Q(aiConfidence__lt=threshold) | Q(aiConfidence__isnull=True)).count()
-            pending_exam = models.AnswerLogs.objects.filter(status=0, practise__type__in=[1, 3]).count()
-            pending_reviews = pending_practice + pending_task + pending_exam
-
-            return BaseView.successData({
-                'todayNewQuestions': today_questions,
-                'todayNewPractices': today_practices,
-                'todayNewExams': today_exams,
-                'activeUsers7d': active_users,
-                'passRate7d': pass_rate,
-                'avgScore7d': avg_score,
-                'pendingReviews': pending_reviews
-            })
-        except Exception as e:
-            return BaseView.error(f'获取首页卡片失败: {str(e)}')
+        from app.views.admin_dashboard_views import AdminDashboardView
+        return AdminDashboardView.get_dashboard_cards(request)
 
     @staticmethod
     def getTrends(request):
-        """首页趋势数据：题目月度新增、活跃用户趋势、练习/任务完成趋势（近30天）"""
-        try:
-            from datetime import datetime, timedelta
-            now = datetime.now()
-            start_30d = now - timedelta(days=29)
-            start_30d_str = start_30d.strftime('%Y-%m-%d %H:%M:%S')
-            # 题目月度新增（本年12个月）
-            months = [f"{m:02d}" for m in range(1, 13)]
-            questionsByMonth = []
-            for m in months:
-                month_start = datetime(now.year, int(m), 1)
-                if int(m) == 12:
-                    month_end = datetime(now.year + 1, 1, 1)
-                else:
-                    month_end = datetime(now.year, int(m) + 1, 1)
-                cnt = models.Practises.objects.filter(
-                    createTime__gte=month_start.strftime('%Y-%m-%d %H:%M:%S'),
-                    createTime__lt=month_end.strftime('%Y-%m-%d %H:%M:%S')).count()
-                questionsByMonth.append(cnt)
-            # 近30天活跃用户：练习/任务/考试任一有记录的去重数
-            activeDaily = []
-            days = []
-            for i in range(30):
-                d = start_30d + timedelta(days=i)
-                d0 = d.replace(hour=0, minute=0, second=0, microsecond=0)
-                d1 = d0 + timedelta(days=1)
-                d0s, d1s = d0.strftime('%Y-%m-%d %H:%M:%S'), d1.strftime('%Y-%m-%d %H:%M:%S')
-                ap = models.StudentPracticeLogs.objects.filter(
-                    startTime__gte=d0s, startTime__lt=d1s).values_list(
-                    'student_id', flat=True)
-                at = models.StudentTaskLogs.objects.filter(
-                    startTime__gte=d0s, startTime__lt=d1s).values_list(
-                    'student_id', flat=True)
-                ae = models.ExamLogs.objects.filter(
-                    createTime__gte=d0s, createTime__lt=d1s).values_list(
-                    'student_id', flat=True)
-                activeDaily.append(len(set(list(ap) + list(at) + list(ae))))
-                days.append(d.strftime('%m-%d'))
-            # 近30天练习/任务完成趋势
-            practiceDoneDaily = []
-            taskDoneDaily = []
-            for i in range(30):
-                d = start_30d + timedelta(days=i)
-                d0 = d.replace(hour=0, minute=0, second=0, microsecond=0)
-                d1 = d0 + timedelta(days=1)
-                d0s, d1s = d0.strftime('%Y-%m-%d %H:%M:%S'), d1.strftime('%Y-%m-%d %H:%M:%S')
-                pd = models.StudentPracticeLogs.objects.filter(
-                    status='completed', endTime__gte=d0s, endTime__lt=d1s).count()
-                td = models.StudentTaskLogs.objects.filter(
-                    status='completed', endTime__gte=d0s, endTime__lt=d1s).count()
-                practiceDoneDaily.append(pd)
-                taskDoneDaily.append(td)
-            return BaseView.successData({
-                'months': months,
-                'questionsByMonth': questionsByMonth,
-                'days': days,
-                'activeUsersDaily': activeDaily,
-                'practiceDoneDaily': practiceDoneDaily,
-                'taskDoneDaily': taskDoneDaily
-            })
-        except Exception as e:
-            return BaseView.error(f'获取趋势数据失败: {str(e)}')
+        from app.views.admin_dashboard_views import AdminDashboardView
+        return AdminDashboardView.get_trends(request)
 
     # 用户管理
     @staticmethod
     def getUsers(request):
-        try:
-            user_type = request.GET.get('type', '')  # 0:管理员, 1:教师, 2:学生
-            page = int(request.GET.get('page', 1))
-            size = int(request.GET.get('size', 10))
-            search = request.GET.get('search', '')
-
-            users_query = models.Users.objects.all()
-
-            if user_type:
-                users_query = users_query.filter(type=int(user_type))
-
-            if search:
-                users_query = users_query.filter(
-                    Q(userName__icontains=search) |
-                    Q(name__icontains=search)
-                )
-
-            total = users_query.count()
-            paginator = Paginator(users_query, size)
-            users_page = paginator.get_page(page)
-
-            users_data = []
-            for user in users_page:
-                user_data = {
-                    'id': user.id,
-                    'userName': user.userName,
-                    'name': user.name,
-                    'gender': user.gender,
-                    'age': user.age,
-                    'type': user.type,
-                    'createTime': user.createTime.strftime('%Y-%m-%d %H:%M:%S') if user.createTime else '',
-                    'lastLoginTime': user.lastLoginTime.strftime('%Y-%m-%d %H:%M:%S') if user.lastLoginTime else ''
-                }
-
-                # 根据用户类型添加额外信息
-                if user.type == 1:  # 教师
-                    teacher = models.Teachers.objects.filter(user=user).first()
-                    if teacher:
-                        user_data.update({
-                            'phone': teacher.phone,
-                            'record': teacher.record,
-                            'job': teacher.job
-                        })
-                elif user.type == 2:  # 学生
-                    student = models.Students.objects.filter(user=user).select_related('grade', 'college').first()
-                    if student:
-                        user_data.update({
-                            'gradeId': student.grade.id if student.grade else None,
-                            'gradeName': student.grade.name if student.grade else '',
-                            'collegeId': student.college.id if student.college else None,
-                            'collegeName': student.college.name if student.college else ''
-                        })
-
-                users_data.append(user_data)
-
-            return BaseView.successData({
-                'list': users_data,
-                'total': total,
-                'page': page,
-                'size': size
-            })
-        except Exception as e:
-            return BaseView.error(f'获取用户列表失败: {str(e)}')
+        from app.views.admin_user_views import AdminUserView
+        return AdminUserView.get_users(request)
 
     @staticmethod
     def manageUsers(request):
-        try:
-            action = request.POST.get('action')  # add, update, delete, disable
-
-            if action == 'add':
-                return AdminView.addUser(request)
-            elif action == 'update':
-                return AdminView.updateUser(request)
-            elif action == 'delete':
-                return AdminView.deleteUser(request)
-            elif action == 'disable':
-                return AdminView.disableUser(request)
-            else:
-                return BaseView.error('无效的操作类型')
-        except Exception as e:
-            return BaseView.error(f'用户操作失败: {str(e)}')
-
-    @staticmethod
-    def addUser(request):
-        try:
-            user_type = int(request.POST.get('type'))
-            user_name = request.POST.get('userName')
-            password = request.POST.get('passWord') or '123456'  # 默认密码
-            name = request.POST.get('name')
-            gender = request.POST.get('gender', '男')
-            age = int(request.POST.get('age', 18))
-
-            # 检查用户名是否已存在
-            if models.Users.objects.filter(userName=user_name).exists():
-                return BaseView.error('用户名已存在')
-
-            # 创建用户（使用加密密码）
-            user = models.Users.objects.create(
-                userName=user_name,
-                passWord=make_password(password),
-                name=name,
-                gender=gender,
-                age=age,
-                type=user_type
-            )
-
-            # 根据用户类型创建对应信息
-            if user_type == 1:  # 教师
-                phone = request.POST.get('phone', '')
-                record = request.POST.get('record', '')
-                job = request.POST.get('job', '')
-                models.Teachers.objects.create(
-                    user=user,
-                    phone=phone,
-                    record=record,
-                    job=job
-                )
-            elif user_type == 2:  # 学生
-                grade_id = request.POST.get('gradeId')
-                college_id = request.POST.get('collegeId')
-                grade = models.Grades.objects.filter(id=grade_id).first() if grade_id else None
-                college = models.Colleges.objects.filter(id=college_id).first() if college_id else None
-                models.Students.objects.create(
-                    user=user,
-                    grade=grade,
-                    college=college
-                )
-
-            return BaseView.success('用户创建成功')
-        except Exception as e:
-            return BaseView.error(f'创建用户失败: {str(e)}')
-
-    @staticmethod
-    def updateUser(request):
-        try:
-            user_id = request.POST.get('id')
-            user = models.Users.objects.filter(id=user_id).first()
-            if not user:
-                return BaseView.error('用户不存在')
-
-            # 更新基本信息
-            user.name = request.POST.get('name', user.name)
-            user.gender = request.POST.get('gender', user.gender)
-            user.age = int(request.POST.get('age', user.age))
-            user.save()
-
-            # 根据用户类型更新额外信息
-            if user.type == 1:  # 教师
-                teacher = models.Teachers.objects.filter(user=user).first()
-                if teacher:
-                    teacher.phone = request.POST.get('phone', teacher.phone)
-                    teacher.record = request.POST.get('record', teacher.record)
-                    teacher.job = request.POST.get('job', teacher.job)
-                    teacher.save()
-            elif user.type == 2:  # 学生
-                student = models.Students.objects.filter(user=user).select_related('grade', 'college').first()
-                if student:
-                    grade_id = request.POST.get('gradeId')
-                    college_id = request.POST.get('collegeId')
-                    if grade_id:
-                        grade = models.Grades.objects.filter(id=grade_id).first()
-                        if grade:
-                            student.grade = grade
-                    if college_id:
-                        college = models.Colleges.objects.filter(id=college_id).first()
-                        if college:
-                            student.college = college
-                    student.save()
-
-            return BaseView.success('用户信息更新成功')
-        except Exception as e:
-            return BaseView.error(f'更新用户信息失败: {str(e)}')
-
-    @staticmethod
-    def deleteUser(request):
-        try:
-            user_id = request.POST.get('id')
-            user = models.Users.objects.filter(id=user_id).first()
-            if not user:
-                return BaseView.error('用户不存在')
-
-            # 删除关联数据
-            if user.type == 1:  # 教师
-                models.Teachers.objects.filter(user=user).delete()
-            elif user.type == 2:  # 学生
-                models.Students.objects.filter(user=user).delete()
-
-            # 删除用户
-            user.delete()
-            return BaseView.success('用户删除成功')
-        except Exception as e:
-            return BaseView.error(f'删除用户失败: {str(e)}')
-
-    @staticmethod
-    def disableUser(request):
-        try:
-            user_id = request.POST.get('id')
-            user = models.Users.objects.filter(id=user_id).first()
-            if not user:
-                return BaseView.error('用户不存在')
-
-            # 这里可以添加禁用逻辑，比如设置状态字段
-            # 目前模型中没有状态字段，可以后续添加
-            return BaseView.success('用户状态更新成功')
-        except Exception as e:
-            return BaseView.error(f'更新用户状态失败: {str(e)}')
+        from app.views.admin_user_views import AdminUserView
+        return AdminUserView.manage_users(request)
 
     # 学科管理
     @staticmethod
     def getSubjects(request):
-        try:
-            page = int(request.GET.get('page', 1))
-            size = int(request.GET.get('size', 10))
-            search = request.GET.get('search', '')
-
-            subjects_query = models.Projects.objects.all()
-
-            if search:
-                subjects_query = subjects_query.filter(name__icontains=search)
-
-            total = subjects_query.count()
-            paginator = Paginator(subjects_query, size)
-            subjects_page = paginator.get_page(page)
-
-            subjects_data = []
-            for subject in subjects_page:
-                subjects_data.append({
-                    'id': subject.id,
-                    'name': subject.name,
-                    'description': subject.description,
-                    'createTime': subject.createTime.strftime('%Y-%m-%d %H:%M:%S') if subject.createTime else ''
-                })
-
-            return BaseView.successData({
-                'list': subjects_data,
-                'total': total,
-                'page': page,
-                'size': size
-            })
-        except Exception as e:
-            return BaseView.error(f'获取学科列表失败: {str(e)}')
+        from app.views.admin_subject_views import AdminSubjectView
+        return AdminSubjectView.get_subjects(request)
 
     @staticmethod
     def manageSubjects(request):
-        try:
-            action = request.POST.get('action')
-
-            if action == 'add':
-                name = request.POST.get('name')
-                description = request.POST.get('description', '')
-
-                if models.Projects.objects.filter(name=name).exists():
-                    return BaseView.error('学科名称已存在')
-
-                models.Projects.objects.create(name=name, description=description)
-                return BaseView.success('学科创建成功')
-
-            elif action == 'update':
-                subject_id = request.POST.get('id')
-                subject = models.Projects.objects.filter(id=subject_id).first()
-                if not subject:
-                    return BaseView.error('学科不存在')
-
-                subject.name = request.POST.get('name', subject.name)
-                subject.description = request.POST.get('description', subject.description)
-                subject.save()
-                return BaseView.success('学科更新成功')
-
-            elif action == 'delete':
-                subject_id = request.POST.get('id')
-                subject = models.Projects.objects.filter(id=subject_id).first()
-                if not subject:
-                    return BaseView.error('学科不存在')
-
-                # 检查是否有关联的试卷或题目
-                if models.Exams.objects.filter(project=subject).exists():
-                    return BaseView.error('该学科下存在试卷，无法删除')
-                if models.Practises.objects.filter(project=subject).exists():
-                    return BaseView.error('该学科下存在题目，无法删除')
-
-                subject.delete()
-                return BaseView.success('学科删除成功')
-            else:
-                return BaseView.error('无效的操作类型')
-        except Exception as e:
-            return BaseView.error(f'学科操作失败: {str(e)}')
+        from app.views.admin_subject_views import AdminSubjectView
+        return AdminSubjectView.manage_subjects(request)
 
     # 试卷管理
     @staticmethod
     def getExams(request):
-        try:
-            page = int(request.GET.get('page', 1))
-            size = int(request.GET.get('size', 10))
-            search = request.GET.get('search', '')
-            subject_id = request.GET.get('subjectId', '')
-
-            exams_query = models.Exams.objects.all()
-
-            if search:
-                exams_query = exams_query.filter(name__icontains=search)
-            if subject_id:
-                exams_query = exams_query.filter(project_id=subject_id)
-
-            total = exams_query.count()
-            paginator = Paginator(exams_query, size)
-            exams_page = paginator.get_page(page)
-
-            exams_data = []
-            for exam in exams_page:
-                exams_data.append({
-                    'id': exam.id,
-                    'name': exam.name,
-                    'subjectId': exam.project.id if exam.project else None,
-                    'subjectName': exam.project.name if exam.project else '',
-                    'createTime': exam.createTime.strftime('%Y-%m-%d %H:%M:%S') if hasattr(exam, 'createTime') and exam.createTime else ''
-                })
-
-            return BaseView.successData({
-                'list': exams_data,
-                'total': total,
-                'page': page,
-                'size': size
-            })
-        except Exception as e:
-            return BaseView.error(f'获取试卷列表失败: {str(e)}')
+        from app.views.admin_exam_views import AdminExamView
+        return AdminExamView.get_exams(request)
 
     @staticmethod
     def manageExams(request):
-        try:
-            action = request.POST.get('action')
-
-            if action == 'add':
-                name = request.POST.get('name')
-                exam_type = request.POST.get('type')
-                subject_id = request.POST.get('subjectId')
-                duration = int(request.POST.get('duration', 120))
-                total_score = int(request.POST.get('totalScore', 100))
-
-                subject = models.Projects.objects.filter(id=subject_id).first() if subject_id else None
-
-                exam = models.Exams.objects.create(
-                    name=name,
-                    type=exam_type,
-                    project=subject,
-                    duration=duration,
-                    totalScore=total_score,
-                    status='draft'
-                )
-                return BaseView.successData({'id': exam.id, 'message': '试卷创建成功'})
-
-            elif action == 'update':
-                exam_id = request.POST.get('id')
-                exam = models.Exams.objects.filter(id=exam_id).first()
-                if not exam:
-                    return BaseView.error('试卷不存在')
-
-                exam.name = request.POST.get('name', exam.name)
-                exam.duration = int(request.POST.get('duration', exam.duration))
-                exam.totalScore = int(request.POST.get('totalScore', exam.totalScore))
-                exam.status = request.POST.get('status', exam.status)
-                exam.save()
-                return BaseView.success('试卷更新成功')
-
-            elif action == 'delete':
-                exam_id = request.POST.get('id')
-                exam = models.Exams.objects.filter(id=exam_id).first()
-                if not exam:
-                    return BaseView.error('试卷不存在')
-
-                # 检查是否有关联的考试记录
-                if models.ExamLogs.objects.filter(exam=exam).exists():
-                    return BaseView.error('该试卷存在考试记录，无法删除')
-
-                exam.delete()
-                return BaseView.success('试卷删除成功')
-            else:
-                return BaseView.error('无效的操作类型')
-        except Exception as e:
-            return BaseView.error(f'试卷操作失败: {str(e)}')
+        from app.views.admin_exam_views import AdminExamView
+        return AdminExamView.manage_exams(request)
 
     # 题目管理
     @staticmethod
     def getQuestions(request):
-        try:
-            # 兼容多种参数名（前端可能传 keyword/type/project）
-            page = int(request.GET.get('page', 1))
-            size = int(request.GET.get('size', 10))
-            search = request.GET.get('search') or request.GET.get('keyword', '')
-            subject_id = request.GET.get('subjectId') or request.GET.get('project', '')
-            question_type = request.GET.get('questionType') or request.GET.get('type', '')
-
-            questions_query = models.Practises.objects.all().order_by('-createTime', '-id')
-
-            if search:
-                questions_query = questions_query.filter(name__icontains=search)
-            if subject_id:
-                questions_query = questions_query.filter(project_id=subject_id)
-            if question_type not in [None, '']:
-                questions_query = questions_query.filter(type=question_type)
-
-            total = questions_query.count()
-            paginator = Paginator(questions_query, size)
-            questions_page = paginator.get_page(page)
-
-            questions_data = []
-            for question in questions_page:
-                # 获取选项信息
-                options = models.Options.objects.filter(practise=question)
-                options_data = []
-                for option in options:
-                    options_data.append({
-                        'id': option.id,
-                        'content': option.name
-                    })
-
-                questions_data.append({
-                    'id': question.id,
-                    'name': question.name,
-                    'type': question.type,
-                    'subjectId': question.project.id if question.project else None,
-                    'subjectName': question.project.name if question.project else '',
-                    'options': options_data,
-                    'answer': question.answer,
-                    'analyse': question.analyse,
-                    'createTime': getattr(question, 'createTime', '')
-                })
-
-            return BaseView.successData({
-                'list': questions_data,
-                'total': total,
-                'page': page,
-                'size': size
-            })
-        except Exception as e:
-            return BaseView.error(f'获取题目列表失败: {str(e)}')
+        from app.views.admin_question_views import AdminQuestionView
+        return AdminQuestionView.get_questions(request)
 
     @staticmethod
     def manageQuestions(request):
-        try:
-            action = request.POST.get('action')
-
-            if action == 'add':
-                name = request.POST.get('name')
-                question_type = request.POST.get('type')
-                subject_id = request.POST.get('subjectId')
-                answer = request.POST.get('answer', '')
-                analyse = request.POST.get('analyse', '')
-                options = request.POST.getlist('options[]')
-                correct_options = request.POST.getlist('correctOptions[]')
-
-                # 校验必填
-                if not all([name, question_type is not None, subject_id]):
-                    return BaseView.error('缺少必要参数')
-
-                subject = models.Projects.objects.filter(id=subject_id).first() if subject_id else None
-
-                question = models.Practises.objects.create(
-                    name=name,
-                    type=question_type,
-                    project=subject,
-                    answer=answer,
-                    analyse=analyse
-                )
-
-                # 创建选项
-                for i, option_content in enumerate(options):
-                    # 题目正确答案仍以 Practises.answer 保存
-                    models.Options.objects.create(
-                        practise=question,
-                        name=option_content
-                    )
-
-                return BaseView.successData({'id': question.id, 'message': '题目创建成功'})
-
-            elif action == 'update':
-                question_id = request.POST.get('id')
-                question = models.Practises.objects.filter(id=question_id).first()
-                if not question:
-                    return BaseView.error('题目不存在')
-
-                question.name = request.POST.get('name', question.name)
-                question.answer = request.POST.get('answer', question.answer)
-                question.analyse = request.POST.get('analyse', question.analyse)
-                question.save()
-
-                # 更新选项
-                options = request.POST.getlist('options[]')
-                correct_options = request.POST.getlist('correctOptions[]')
-
-                # 删除旧选项
-                models.Options.objects.filter(practise=question).delete()
-
-                # 创建新选项
-                for i, option_content in enumerate(options):
-                    models.Options.objects.create(
-                        practise=question,
-                        name=option_content
-                    )
-
-                return BaseView.success('题目更新成功')
-
-            elif action == 'delete':
-                question_id = request.POST.get('id')
-                question = models.Practises.objects.filter(id=question_id).first()
-                if not question:
-                    return BaseView.error('题目不存在')
-
-                # 删除选项
-                models.Options.objects.filter(practise=question).delete()
-
-                # 删除题目
-                question.delete()
-                return BaseView.success('题目删除成功')
-            elif action == 'generate_ai':
-                return AdminView.generateAIQuestions(request)
-            else:
-                return BaseView.error('无效的操作类型')
-        except Exception as e:
-            return BaseView.error(f'题目操作失败: {str(e)}')
+        from app.views.admin_question_views import AdminQuestionView
+        return AdminQuestionView.manage_questions(request)
 
     # 批量导入题目（CSV）
     @staticmethod
     def importQuestions(request):
-        try:
-            file = request.FILES.get('file')
-            subject_id = request.POST.get('subjectId')
-            if not file:
-                return BaseView.error('未上传文件')
-
-            # 验证文件大小（限制10MB）
-            if file.size > 10 * 1024 * 1024:
-                return BaseView.error('文件大小不能超过10MB')
-
-            # 验证文件类型
-            if not file.name.endswith('.csv'):
-                return BaseView.error('只支持CSV格式文件')
-
-            subject = models.Projects.objects.filter(id=subject_id).first() if subject_id else None
-            if not subject:
-                return BaseView.error('指定的科目不存在')
-
-            decoded = file.read().decode('utf-8-sig')
-            reader = csv.DictReader(io.StringIO(decoded))
-
-            created, failed = 0, []
-            for idx, row in enumerate(reader, start=2):  # 从第2行（跳过表头）
-                try:
-                    name = row.get('name') or row.get('题目')
-                    type_str = (row.get('type') or row.get('题型') or '0').strip()
-                    type_map = {
-                        'single': 0, '选择': 0, '选择题': 0, '0': 0,
-                        'fill': 1, '填空': 1, '填空题': 1, '1': 1,
-                        'judge': 2, '判断': 2, '判断题': 2, '2': 2,
-                        'essay': 3, '编程': 3, '简答': 3, '编程题': 3, '3': 3,
-                    }
-                    qtype = type_map.get(type_str.lower(), 0)
-
-                    # 验证题目类型
-                    if qtype not in [0, 1, 2, 3]:
-                        failed.append({'line': idx, 'reason': f'无效的题目类型: {type_str}'})
-                        continue
-
-                    answer = row.get('answer') or row.get('答案') or ''
-                    analyse = row.get('analyse') or row.get('解析') or ''
-
-                    # 验证题目内容
-                    if not name or not name.strip():
-                        failed.append({'line': idx, 'reason': '题目内容为空'})
-                        continue
-
-                    # 验证答案
-                    if not answer or not answer.strip():
-                        failed.append({'line': idx, 'reason': '答案不能为空'})
-                        continue
-
-                    # 选择题必须验证选项
-                    options = []
-                    if qtype == 0:
-                        for k in ['optionA', 'optionB', 'optionC', 'optionD',
-                                  'A', 'B', 'C', 'D', '选项A', '选项B', '选项C', '选项D']:
-                            if row.get(k):
-                                options.append(row.get(k))
-
-                        if len(options) < 2:
-                            failed.append({'line': idx, 'reason': '选择题至少需要2个选项'})
-                            continue
-
-                        # 选择题答案可能提供为 A/B/C/D 或 0/1/2/3
-                        if answer:
-                            ans_norm = answer.strip().upper()
-                            letter_to_index = {'A': '0', 'B': '1', 'C': '2', 'D': '3'}
-                            answer = '|'.join([letter_to_index.get(ch, ch)
-                                              for ch in ans_norm.replace(',', '|').split('|')])
-
-                    # 行内subjectId优先
-                    row_subject_id = row.get('subjectId') or row.get('学科ID')
-                    row_subject = models.Projects.objects.filter(
-                        id=row_subject_id).first() if row_subject_id else subject
-
-                    if not row_subject:
-                        failed.append({'line': idx, 'reason': '科目不存在'})
-                        continue
-
-                    question = models.Practises.objects.create(
-                        name=name.strip(),
-                        type=qtype,
-                        project=row_subject,
-                        answer=answer,
-                        analyse=analyse
-                    )
-                    if qtype == 0 and options:
-                        for opt in options:
-                            models.Options.objects.create(practise=question, name=opt)
-                    created += 1
-                except Exception as ie:
-                    failed.append({'line': idx, 'reason': str(ie)})
-
-            return BaseView.successData({'created': created, 'failed': failed})
-        except Exception as e:
-            return BaseView.error(f'导入失败: {str(e)}')
+        from app.views.admin_question_views import AdminQuestionView
+        return AdminQuestionView.import_questions(request)
 
     # 批量导出题目（CSV）
     @staticmethod
     def exportQuestions(request):
-        try:
-            subject_id = request.POST.get('subjectId')
-            search = request.POST.get('search', '')
-            question_type = request.POST.get('questionType')
-            query = models.Practises.objects.all()
-            if subject_id:
-                query = query.filter(project_id=subject_id)
-            if search:
-                query = query.filter(name__icontains=search)
-            if question_type not in [None, '']:
-                query = query.filter(type=question_type)
-
-            output = io.StringIO()
-            writer = csv.writer(output)
-            writer.writerow(['id', 'name', 'type', 'subjectId', 'answer', 'analyse', 'options'])
-            for q in query:
-                options = models.Options.objects.filter(practise=q).values_list('name', flat=True)
-                writer.writerow([
-                    q.id, q.name, q.type, q.project.id if q.project else '', q.answer, q.analyse, '|'.join(options)
-                ])
-
-            from django.http import HttpResponse
-            resp = HttpResponse(output.getvalue(), content_type='text/csv; charset=utf-8')
-            resp['Content-Disposition'] = 'attachment; filename=questions_export.csv'
-            return resp
-        except Exception as e:
-            return BaseView.error(f'导出失败: {str(e)}')
+        from app.views.admin_question_views import AdminQuestionView
+        return AdminQuestionView.export_questions(request)
 
     # 下载题目导入模板
     @staticmethod
     def questionsTemplate(request):
-        try:
-            sample = (
-                'name,type,answer,analyse,optionA,optionB,optionC,optionD,subjectId\n'
-                '以下哪个是 Python 的整数类型标识?,0,0,整数类型多为 int,整型,int,float,str,1\n'
-                'Python 定义函数使用的关键字是?,1,def,函数定义关键字,,, , ,1\n'
-                'Python 是解释型语言?,2,true,判断正误题,,, , ,1\n'
-                '实现函数 add(a,b) 返回和,3,def add(a,b): return a+b,示例答案,,, , ,1\n'
-            )
-            from django.http import HttpResponse
-            resp = HttpResponse(sample, content_type='text/csv; charset=utf-8')
-            resp['Content-Disposition'] = 'attachment; filename=questions_template.csv'
-            return resp
-        except Exception as e:
-            return BaseView.error(f'生成模板失败: {str(e)}')
+        from app.views.admin_question_views import AdminQuestionView
+        return AdminQuestionView.questions_template(request)
 
     @staticmethod
     def generateAIQuestionsBatch(request):
-        """AI 批量生成多类型题目并入库。
-        支持参数：
-          - subject, topic, difficulty, subjectId
-          - questionTypes: '0,1,2,3' 或 JSON 数组
-          - counts: 可选，JSON 对象或 '0:5,1:5,2:5,3:2'，若缺省则均分 total count
-          - count: 可选，总数，用于均分
-        """
-        try:
-            from comm.AIUtils import AIUtils
-            import json as _json
-
-            subject = request.POST.get('subject')
-            topic = request.POST.get('topic')
-            difficulty = request.POST.get('difficulty', 'medium')
-            subject_id = request.POST.get('subjectId')
-            question_types_raw = request.POST.get('questionTypes', '')
-            counts_raw = request.POST.get('counts', '')
-            total_count = int(request.POST.get('count', '0') or '0')
-
-            # 限制单次生成的最大数量，防止系统过载
-            MAX_BATCH_SIZE = 50
-            if total_count > MAX_BATCH_SIZE:
-                return BaseView.error(f'单次生成题目数量不能超过{MAX_BATCH_SIZE}道')
-
-            if not all([subject, topic, subject_id, question_types_raw]):
-                return BaseView.error('缺少必要参数：subject/topic/subjectId/questionTypes')
-
-            # 解析类型列表
-            types_list = []
-            try:
-                if question_types_raw.strip().startswith('['):
-                    types_list = [_ for _ in _json.loads(question_types_raw)]
-                else:
-                    types_list = [int(x) for x in str(question_types_raw).split(',') if str(x).strip() != '']
-            except Exception:
-                return BaseView.error('参数 questionTypes 格式错误')
-            types_list = [int(t) for t in types_list if int(t) in [0, 1, 2, 3]]
-            if not types_list:
-                return BaseView.error('请选择至少一种题目类型')
-
-            # 解析每类数量
-            count_by_type = {}
-            if counts_raw:
-                try:
-                    if counts_raw.strip().startswith('{'):
-                        tmp = _json.loads(counts_raw)
-                        for k, v in tmp.items():
-                            count_by_type[int(k)] = int(v)
-                    else:
-                        # '0:5,1:5'
-                        pairs = [p for p in counts_raw.split(',') if ':' in p]
-                        for p in pairs:
-                            k, v = p.split(':', 1)
-                            count_by_type[int(k)] = int(v)
-                except Exception:
-                    count_by_type = {}
-            # 均分逻辑
-            if not count_by_type:
-                even = max(1, (total_count or 0) // len(types_list)) if (total_count or 0) > 0 else 5
-                for t in types_list:
-                    count_by_type[int(t)] = even
-
-            subject_obj = models.Projects.objects.filter(id=subject_id).first()
-            if not subject_obj:
-                return BaseView.error('科目不存在')
-
-            ai_utils = AIUtils()
-            created_total = 0
-            created_by_type = {0: 0, 1: 0, 2: 0, 3: 0}
-
-            for t in types_list:
-                c = int(count_by_type.get(int(t), 0))
-                if c <= 0:
-                    continue
-                qs = ai_utils.ai_generate_questions(
-                    subject=subject,
-                    topic=topic,
-                    difficulty=difficulty,
-                    question_type=int(t),
-                    count=c
-                )
-                for q in qs or []:
-                    try:
-                        question = models.Practises.objects.create(
-                            name=q['content'],
-                            type=int(t),
-                            project=subject_obj,
-                            answer=q.get('answer', ''),
-                            analyse=q.get('analysis', ''),
-                            createTime=DateUtil.getNowDateTime()
-                        )
-                        if int(t) == 0 and 'options' in q:
-                            for opt in q['options']:
-                                models.Options.objects.create(practise=question, name=opt)
-                        created_total += 1
-                        created_by_type[int(t)] += 1
-                    except Exception as ie:
-                        print(f'保存题目失败(type={t}): {str(ie)}')
-                        continue
-
-            return BaseView.successData({
-                'created': created_total,
-                'createdByType': created_by_type
-            })
-        except Exception as e:
-            return BaseView.error(f'批量生成失败: {str(e)}')
+        from app.views.admin_question_views import AdminQuestionView
+        return AdminQuestionView.generate_ai_questions_batch(request)
 
     @staticmethod
     def generateAIPracticePaper(request):
-        """AI 生成练习试卷并入库：先生成题目入库，再创建试卷并关联题目。"""
-        try:
-            from comm.AIUtils import AIUtils
-            subject = request.POST.get('subject')
-            topic = request.POST.get('topic')
-            difficulty = request.POST.get('difficulty', 'medium')
-            question_type = int(request.POST.get('questionType', 0))
-            count = int(request.POST.get('count', 10))
-            subject_id = request.POST.get('subjectId')
-            teacher_id = request.POST.get('teacherId')
-            duration = int(request.POST.get('duration', 60))
-            total_score = int(request.POST.get('totalScore', 100))
-            title = request.POST.get('title')
-
-            if not all([subject, topic, subject_id, teacher_id]):
-                return BaseView.error('缺少必要参数：subject/topic/subjectId/teacherId')
-
-            if difficulty not in ['easy', 'medium', 'hard']:
-                difficulty = 'medium'
-            if question_type not in [0, 1, 2, 3]:
-                return BaseView.error('无效的题目类型')
-            if count < 1 or count > 50:
-                count = 10
-
-            subject_obj = models.Projects.objects.filter(id=subject_id).first()
-            teacher_obj = models.Users.objects.filter(id=teacher_id).first()
-            if not subject_obj:
-                return BaseView.error('科目不存在')
-            if not teacher_obj:
-                return BaseView.error('教师不存在')
-
-            ai_utils = AIUtils()
-            questions = ai_utils.ai_generate_questions(
-                subject=subject,
-                topic=topic,
-                difficulty=difficulty,
-                question_type=question_type,
-                count=count
-            )
-            if not questions:
-                return BaseView.error('AI生成题目失败')
-
-            # 入库题目
-            created_practises = []
-            for q in questions:
-                try:
-                    practise = models.Practises.objects.create(
-                        name=q['content'],
-                        type=question_type,
-                        project=subject_obj,
-                        answer=q['answer'],
-                        analyse=q.get('analysis', ''),
-                        createTime=DateUtil.getNowDateTime()
-                    )
-                    if question_type == 0 and 'options' in q:
-                        for opt in q['options']:
-                            models.Options.objects.create(practise=practise, name=opt)
-                    created_practises.append(practise)
-                except Exception as ie:
-                    print(f'保存题目失败: {str(ie)}')
-                    continue
-
-            if not created_practises:
-                return BaseView.error('题目入库失败')
-
-            # 创建试卷并关联题目
-            paper_title = title or f"{subject}-{topic}-{difficulty}-{DateUtil.getNowDateTime()}"
-            paper = models.PracticePapers.objects.create(
-                title=paper_title,
-                description='AI自动生成练习试卷',
-                type='fixed',
-                difficulty=difficulty,
-                duration=duration,
-                totalScore=total_score,
-                project=subject_obj,
-                teacher=teacher_obj,
-                createTime=DateUtil.getNowDateTime(),
-                isActive=True
-            )
-
-            # 均分分值
-            per_score = round(total_score / len(created_practises), 2)
-            for idx, p in enumerate(created_practises, start=1):
-                models.PracticePaperQuestions.objects.create(
-                    paper=paper,
-                    practise=p,
-                    questionOrder=idx,
-                    score=per_score
-                )
-
-            return BaseView.successData({
-                'paperId': paper.id,
-                'title': paper.title,
-                'questionCount': len(created_practises)
-            })
-        except Exception as e:
-            return BaseView.error(f'生成练习试卷失败: {str(e)}')
+        from app.views.admin_practice_paper_ai_views import AdminPracticePaperAIView
+        return AdminPracticePaperAIView.generate_ai_practice_paper(request)
 
     @staticmethod
     def generateAIPracticePaperCounts(request):
-        """按不同题型数量一次性生成练习试卷（默认 0:10,1:10,2:10,3:2）。
-        参数：subject, topic, difficulty, subjectId, teacherId, title, duration(默认60), totalScore(可留空自动按规则计算)
-        可选 counts: '0:10,1:10,2:10,3:2'
-        计分规则：0/1/2 每题2分，3 每题20分。
-        """
-        try:
-            from comm.AIUtils import AIUtils
-            subject = request.POST.get('subject')
-            topic = request.POST.get('topic')
-            difficulty = request.POST.get('difficulty', 'medium')
-            subject_id = request.POST.get('subjectId')
-            teacher_id = request.POST.get('teacherId')
-            title = request.POST.get('title')
-            duration = int(request.POST.get('duration', 60))
-            counts_raw = request.POST.get('counts', '0:10,1:10,2:10,3:2')
-
-            if not all([subject, topic, subject_id, teacher_id]):
-                return BaseView.error('缺少必要参数：subject/topic/subjectId/teacherId')
-
-            subject_obj = models.Projects.objects.filter(id=subject_id).first()
-            teacher_obj = models.Users.objects.filter(id=teacher_id).first()
-            if not subject_obj:
-                return BaseView.error('科目不存在')
-            if not models.Teachers.objects.filter(user=teacher_obj).exists():
-                return BaseView.error('教师不存在')
-
-            # 解析 counts
-            count_map = {0: 10, 1: 10, 2: 10, 3: 2}
-            try:
-                parts = [p for p in counts_raw.split(',') if ':' in p]
-                for p in parts:
-                    k, v = p.split(':', 1)
-                    k_i = int(k)
-                    v_i = int(v)
-                    if k_i in [0, 1, 2, 3] and v_i >= 0:
-                        count_map[k_i] = v_i
-            except Exception:
-                pass
-
-            # 创建试卷
-            from comm.CommUtils import DateUtil
-            paper = models.PracticePapers.objects.create(
-                title=title or f"{subject}-{topic}-{difficulty}-{DateUtil.getNowDateTime()}",
-                description='AI自动生成练习试卷（多题型）',
-                type='fixed',
-                difficulty=difficulty,
-                duration=duration,
-                totalScore=count_map.get(0, 0) * 2 + count_map.get(1, 0) * 2 +
-                count_map.get(2, 0) * 2 + count_map.get(3, 0) * 20,
-                project=subject_obj,
-                teacher=teacher_obj,
-                createTime=DateUtil.getNowDateTime(),
-                isActive=True
-            )
-
-            ai = AIUtils()
-            order = 1
-            created = {0: 0, 1: 0, 2: 0, 3: 0}
-            for t in [0, 1, 2, 3]:
-                c = int(count_map.get(t, 0))
-                if c <= 0:
-                    continue
-                qs = ai.ai_generate_questions(
-                    subject=subject,
-                    topic=topic,
-                    difficulty=difficulty,
-                    question_type=t,
-                    count=c) or []
-                for q in qs:
-                    # 入库题目
-                    practise = models.Practises.objects.create(
-                        name=q.get('content', ''),
-                        type=t,
-                        project=subject_obj,
-                        answer=q.get('answer', ''),
-                        analyse=q.get('analysis', ''),
-                        createTime=DateUtil.getNowDateTime()
-                    )
-                    if t == 0 and 'options' in q:
-                        for opt in q['options']:
-                            models.Options.objects.create(practise=practise, name=opt)
-                    # 关联到试卷
-                    score = 2 if t in [0, 1, 2] else 20
-                    models.PracticePaperQuestions.objects.create(
-                        paper=paper,
-                        practise=practise,
-                        questionOrder=order,
-                        score=score
-                    )
-                    order += 1
-                    created[t] += 1
-
-            return BaseView.successData({
-                'paperId': paper.id,
-                'title': paper.title,
-                'createdByType': created,
-                'totalScore': paper.totalScore
-            })
-        except Exception as e:
-            return BaseView.error(f'生成失败: {str(e)}')
+        from app.views.admin_practice_paper_ai_views import AdminPracticePaperAIView
+        return AdminPracticePaperAIView.generate_ai_practice_paper_counts(request)
 
     @staticmethod
     def generateAIQuestions(request):
-        """AI自动生成题目"""
-        try:
-            from comm.AIUtils import AIUtils
-
-            # 获取参数
-            subject = request.POST.get('subject')
-            topic = request.POST.get('topic')
-            difficulty = request.POST.get('difficulty', 'medium')
-            question_type = int(request.POST.get('questionType', 0))
-            count = int(request.POST.get('count', 5))
-            subject_id = request.POST.get('subjectId')
-
-            # 参数验证
-            if not all([subject, topic, subject_id]):
-                return BaseView.error('缺少必要参数：科目、主题和科目ID')
-
-            # 验证难度等级
-            if difficulty not in ['easy', 'medium', 'hard']:
-                difficulty = 'medium'
-
-            # 验证题目类型
-            if question_type not in [0, 1, 2, 3]:
-                return BaseView.error('无效的题目类型')
-
-            # 验证数量
-            if count < 1 or count > 20:
-                count = 5
-
-            # 获取科目信息
-            subject_obj = models.Projects.objects.filter(id=subject_id).first()
-            if not subject_obj:
-                return BaseView.error('科目不存在')
-
-            # 初始化AI工具
-            ai_utils = AIUtils()
-
-            # 生成题目
-            questions = ai_utils.ai_generate_questions(
-                subject=subject,
-                topic=topic,
-                difficulty=difficulty,
-                question_type=question_type,
-                count=count
-            )
-
-            if not questions:
-                # 将关键配置带回，便于排查（不包含密钥）
-                return BaseView.error(f"AI生成题目失败（model={ai_utils.model}, base_url={ai_utils.base_url}）")
-
-            # 保存生成的题目到database
-            created_questions = []
-            for question_data in questions:
-                try:
-                    # 创建题目
-                    question = models.Practises.objects.create(
-                        name=question_data['content'],
-                        type=question_type,
-                        project=subject_obj,
-                        answer=question_data['answer'],
-                        analyse=question_data.get('analysis', ''),
-                        createTime=DateUtil.getNowDateTime()
-                    )
-
-                    # 如果是选择题，创建选项
-                    if question_type == 0 and 'options' in question_data:
-                        options = question_data['options']
-                        for i, option in enumerate(options):
-                            models.Options.objects.create(
-                                practise=question,
-                                name=option
-                            )
-
-                    created_questions.append({
-                        'id': question.id,
-                        'content': question.name,
-                        'answer': question.answer,
-                        'analysis': question.analyse
-                    })
-
-                except Exception as e:
-                    print(f"保存题目失败: {str(e)}")
-                    continue
-
-            return BaseView.successData({
-                'message': f'成功生成{len(created_questions)}道题目',
-                'questions': created_questions,
-                'total_generated': len(created_questions),
-                'requested_count': count
-            })
-
-        except Exception as e:
-            print(f"AI生成题目失败: {str(e)}")
-            return BaseView.error(f'AI生成题目失败: {str(e)}')
+        from app.views.admin_question_views import AdminQuestionView
+        return AdminQuestionView.generate_ai_questions(request)
 
     # 任务管理
     @staticmethod
     def getTasks(request):
-        try:
-            page = int(request.GET.get('page', 1))
-            size = int(request.GET.get('size', 10))
-            search = request.GET.get('search', '')
-            subject_id = request.GET.get('subjectId', '')
-
-            tasks_query = models.Tasks.objects.all()
-
-            if search:
-                tasks_query = tasks_query.filter(name__icontains=search)
-            if subject_id:
-                tasks_query = tasks_query.filter(project_id=subject_id)
-
-            total = tasks_query.count()
-            paginator = Paginator(tasks_query, size)
-            tasks_page = paginator.get_page(page)
-
-            tasks_data = []
-            for task in tasks_page:
-                tasks_data.append({
-                    'id': task.id,
-                    'name': task.name,
-                    'subjectId': task.project.id if task.project else None,
-                    'subjectName': task.project.name if task.project else '',
-                    'gradeId': task.grade.id if task.grade else None,
-                    'gradeName': task.grade.name if task.grade else '',
-                    'duration': task.duration,
-                    'totalScore': task.totalScore,
-                    'status': task.status,
-                    'createTime': task.createTime.strftime('%Y-%m-%d %H:%M:%S') if task.createTime else ''
-                })
-
-            return BaseView.successData({
-                'list': tasks_data,
-                'total': total,
-                'page': page,
-                'size': size
-            })
-        except Exception as e:
-            return BaseView.error(f'获取任务列表失败: {str(e)}')
+        from app.views.admin_task_views import AdminTaskView
+        return AdminTaskView.get_tasks(request)
 
     @staticmethod
     def manageTasks(request):
-        try:
-            action = request.POST.get('action')
-
-            if action == 'add':
-                name = request.POST.get('name')
-                subject_id = request.POST.get('subjectId')
-                grade_id = request.POST.get('gradeId')
-                duration = int(request.POST.get('duration', 120))
-                total_score = int(request.POST.get('totalScore', 100))
-
-                subject = models.Projects.objects.filter(id=subject_id).first() if subject_id else None
-                grade = models.Grades.objects.filter(id=grade_id).first() if grade_id else None
-
-                task = models.Tasks.objects.create(
-                    name=name,
-                    project=subject,
-                    grade=grade,
-                    duration=duration,
-                    totalScore=total_score,
-                    status='draft'
-                )
-                return BaseView.successData({'id': task.id, 'message': '任务创建成功'})
-
-            elif action == 'update':
-                task_id = request.POST.get('id')
-                task = models.Tasks.objects.filter(id=task_id).first()
-                if not task:
-                    return BaseView.error('任务不存在')
-
-                task.name = request.POST.get('name', task.name)
-                task.duration = int(request.POST.get('duration', task.duration))
-                task.totalScore = int(request.POST.get('totalScore', task.totalScore))
-                task.status = request.POST.get('status', task.status)
-                task.save()
-                return BaseView.success('任务更新成功')
-
-            elif action == 'delete':
-                task_id = request.POST.get('id')
-                task = models.Tasks.objects.filter(id=task_id).first()
-                if not task:
-                    return BaseView.error('任务不存在')
-
-                # 检查是否有关联的任务记录
-                if models.TaskLogs.objects.filter(task=task).exists():
-                    return BaseView.error('该任务存在执行记录，无法删除')
-
-                task.delete()
-                return BaseView.success('任务删除成功')
-            else:
-                return BaseView.error('无效的操作类型')
-        except Exception as e:
-            return BaseView.error(f'任务操作失败: {str(e)}')
+        from app.views.admin_task_views import AdminTaskView
+        return AdminTaskView.manage_tasks(request)
 
     # 消息管理
     @staticmethod
     def getMessages(request):
-        """
-        API获取消息列表
-
-        ---
-        tags:
-          - 消息管理
-        summary:
-          获取消息列表
-        description:
-          分页获取系统消息列表，支持搜索和筛选
-        parameters:
-          - name: page
-            in: query
-            type: integer
-            required: false
-            default: 1
-            description: 页码
-          - name: size
-            in: query
-            type: integer
-            required: false
-            default: 10
-            description: 每页数量
-          - name: search
-            in: formData
-            type: string
-            required: false
-            description: 搜索关键字（消息标题）
-        responses:
-          200:
-            description: 成功返回消息列表
-            schema:
-              type: object
-              properties:
-                code:
-                  type: integer
-                  example: 0
-                msg:
-                  type: string
-                  example: "处理成功"
-                data:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      id:
-                        type: integer
-                        description: 消息ID
-                      title:
-                        type: string
-                        description: 消息标题
-                      content:
-                        type: string
-                        description: 消息内容
-                      type:
-                        type: integer
-                        description: 消息类型
-                      priority:
-                        type: integer
-                        description: 优先级
-                      senderName:
-                        type: string
-                        description: 发送者姓名
-                      createTime:
-                        type: string
-                        description: 创建时间
-                      totalRecipients:
-                        type: integer
-                        description: 总接收人数
-                      readCount:
-                        type: integer
-                        description: 已读人数
-        """
-        try:
-            page = int(request.GET.get('page', 1))
-            size = int(request.GET.get('size', 10))
-            search = request.POST.get('search', '')
-
-            # 优化查询：使用select_related和prefetch_related
-            messages_query = models.Messages.objects.select_related(
-                'sender'
-            ).prefetch_related(
-                'messagereads_set'
-            ).all()
-
-            if search:
-                messages_query = messages_query.filter(title__icontains=search)
-
-            total = messages_query.count()
-            paginator = Paginator(messages_query, size)
-            messages_page = paginator.get_page(page)
-
-            messages_data = []
-            for message in messages_page:
-                # 优化：使用预加载的数据统计接收/已读人数
-                total_recipients = message.messagereads_set.count()
-                read_count = message.messagereads_set.filter(isRead=True).count()
-                # 附件列表
-                attachments_data = []
-                if hasattr(message, 'attachments'):
-                    for att in message.attachments.all():
-                        attachments_data.append({
-                            'id': att.id,
-                            'name': att.name,
-                            'size': att.size or 0,
-                            # 前端若需要可直接打开URL；下载接口也支持按ID下载
-                            'url': att.file.url if att.file else ''
-                        })
-
-                messages_data.append({
-                    'id': message.id,
-                    'title': message.title,
-                    'content': message.content,
-                    'type': message.type,
-                    'priority': message.priority,
-                    'senderId': message.sender.id if message.sender else None,
-                    'senderName': message.sender.name if message.sender else '',
-                    'createTime': message.createTime.strftime('%Y-%m-%d %H:%M:%S') if message.createTime else '',
-                    'readCount': read_count,
-                    'totalRecipients': total_recipients,
-                    'attachments': attachments_data
-                })
-
-            return BaseView.successData({
-                'list': messages_data,
-                'total': total,
-                'page': page,
-                'size': size
-            })
-        except Exception as e:
-            return BaseView.error(f'获取消息列表失败: {str(e)}')
+        from app.views.admin_message_views import AdminMessageView
+        return AdminMessageView.get_messages(request)
 
     @staticmethod
     def getMessageReaders(request):
-        """获取某条消息的已读/未读详情列表"""
-        try:
-            message_id = request.GET.get('messageId')
-            if not message_id:
-                return BaseView.error('消息ID不能为空')
-
-            page = int(request.GET.get('page', 1))
-            size = int(request.GET.get('pageSize', 10))
-
-            from django.core.paginator import Paginator
-            qs = models.MessageReads.objects.filter(message_id=message_id).select_related('user')
-            paginator = Paginator(qs.order_by('-readTime'), size)
-            page_obj = paginator.get_page(page)
-
-            readers = []
-            for mr in page_obj:
-                u = mr.user
-                readers.append({
-                    'id': mr.id,
-                    'userId': u.id if u else None,
-                    'userName': u.userName if u else '',
-                    'realName': u.name if u else '',
-                    'userType': u.type if u else None,
-                    'isRead': mr.isRead,
-                    'readTime': mr.readTime.strftime('%Y-%m-%d %H:%M:%S') if mr.readTime else ''
-                })
-
-            total_count = qs.count()
-            read_count = qs.filter(isRead=True).count()
-            unread_count = total_count - read_count
-            read_rate = round(read_count / total_count * 100) if total_count > 0 else 0
-
-            return BaseView.successData({
-                'totalCount': total_count,
-                'readCount': read_count,
-                'unreadCount': unread_count,
-                'readRate': read_rate,
-                'readers': readers,
-                'page': page,
-                'pageSize': size,
-                'total': total_count
-            })
-        except Exception as e:
-            return BaseView.error(f'获取已读情况失败: {str(e)}')
+        from app.views.admin_message_views import AdminMessageView
+        return AdminMessageView.get_message_readers(request)
 
     @staticmethod
     def manageMessages(request):
-        try:
-            action = request.POST.get('action')
+        from app.views.admin_message_views import AdminMessageView
+        return AdminMessageView.manage_messages(request)
 
-            if action == 'send':
-                title = request.POST.get('title')
-                content = request.POST.get('content')
-                message_type = request.POST.get('type', 'notice')
-                priority = request.POST.get('priority', 'medium')
-                user_type = request.POST.get('userType', 'all')
-                recipient_ids = request.POST.getlist('recipientIds[]')
-
-                # 获取发送者信息
-                sender_id = cache.get(request.POST.get('token'))
-                sender = models.Users.objects.filter(id=sender_id).first()
-                if not sender:
-                    return BaseView.error('发送者不存在或未登录，请重新登录后再试')
-
-                # 创建消息
-                message = models.Messages.objects.create(
-                    title=title,
-                    content=content,
-                    type=message_type,
-                    priority=priority,
-                    sender=sender
-                )
-
-                # 处理附件上传（可选）
-                files = request.FILES.getlist('attachments') or request.FILES.getlist('attachmentFiles')
-                for f in files:
-                    models.MessageAttachments.objects.create(
-                        message=message,
-                        file=f,
-                        name=getattr(f, 'name', ''),
-                        size=getattr(f, 'size', None)
-                    )
-
-                # 若非自定义选择，则在后端按用户类型选择接收者
-                if user_type != 'custom':
-                    qs = models.Users.objects.all()
-                    if user_type == 'admin':
-                        qs = qs.filter(type=0)
-                    elif user_type == 'teacher':
-                        qs = qs.filter(type=1)
-                    elif user_type == 'student':
-                        qs = qs.filter(type=2)
-                    recipient_ids = [u.id for u in qs]
-
-                # 添加接收者
-                for recipient_id in recipient_ids:
-                    recipient = models.Users.objects.filter(id=recipient_id).first()
-                    if recipient:
-                        models.MessageReads.objects.create(
-                            message=message,
-                            user=recipient,
-                            isRead=False
-                        )
-
-                return BaseView.success('消息发送成功')
-
-            elif action == 'forward':
-                # 消息转发功能
-                message_id = request.POST.get('messageId')
-                recipient_ids = request.POST.getlist('recipientIds[]')
-
-                if not message_id or not recipient_ids:
-                    return BaseView.error('请选择要转发的消息和接收者')
-
-                # 获取原始消息
-                original_message = models.Messages.objects.filter(id=message_id).first()
-                if not original_message:
-                    return BaseView.error('消息不存在')
-
-                # 获取转发者信息
-                forwarder_id = cache.get(request.POST.get('token'))
-                forwarder = models.Users.objects.filter(id=forwarder_id).first()
-                if not forwarder:
-                    return BaseView.error('用户未登录')
-
-                # 创建转发消息（标题添加"转发："前缀）
-                forwarded_title = f"转发：{original_message.title}"
-                sender_name = original_message.sender.name if original_message.sender else '系统'
-                forwarded_content = f"【转发自 {sender_name}】\n\n{original_message.content}"
-
-                # 创建新消息
-                forwarded_message = models.Messages.objects.create(
-                    title=forwarded_title,
-                    content=forwarded_content,
-                    type=original_message.type,
-                    priority=original_message.priority,
-                    sender=forwarder
-                )
-
-                # 复制原消息的附件（如有）
-                if hasattr(original_message, 'attachments'):
-                    for att in original_message.attachments.all():
-                        models.MessageAttachments.objects.create(
-                            message=forwarded_message,
-                            file=att.file,
-                            name=att.name,
-                            size=att.size
-                        )
-
-                # 添加接收者
-                for recipient_id in recipient_ids:
-                    recipient = models.Users.objects.filter(id=recipient_id).first()
-                    if recipient:
-                        models.MessageReads.objects.create(
-                            message=forwarded_message,
-                            user=recipient,
-                            isRead=False
-                        )
-
-                return BaseView.success('消息转发成功')
-
-            elif action == 'delete':
-                message_id = request.POST.get('id')
-                message = models.Messages.objects.filter(id=message_id).first()
-                if not message:
-                    return BaseView.error('消息不存在')
-
-                # 删除消息附件与读取记录
-                models.MessageAttachments.objects.filter(message=message).delete()
-                models.MessageReads.objects.filter(message=message).delete()
-
-                # 删除消息
-                message.delete()
-                return BaseView.success('消息删除成功')
-            else:
-                return BaseView.error('无效的操作类型')
-        except Exception as e:
-            return BaseView.error(f'消息操作失败: {str(e)}')
+    @staticmethod
+    def getLogs(request):
+        """获取操作日志（兼容 /api/admin/logs/）"""
+        from app.views.admin_log_views import AdminLogView
+        return AdminLogView.get_logs(request)
 
     @staticmethod
     def downloadMessageAttachment(request):
-        """按附件ID下载消息附件"""
-        try:
-            attachment_id = request.GET.get('id')
-            if not attachment_id:
-                return BaseView.error('缺少附件ID')
-
-            attachment = models.MessageAttachments.objects.filter(id=attachment_id).first()
-            if not attachment or not attachment.file:
-                return BaseView.error('附件不存在')
-
-            filename = attachment.name or os.path.basename(attachment.file.name)
-            response = FileResponse(attachment.file.open('rb'), as_attachment=True, filename=filename)
-            return response
-        except Exception as e:
-            return BaseView.error(f'下载附件失败: {str(e)}')
+        from app.views.admin_message_views import AdminMessageView
+        return AdminMessageView.download_message_attachment(request)
 
     # 批量导入学生
     @staticmethod
     def importStudents(request):
-        """批量导入学生"""
-        try:
-            file = request.FILES.get('file')
-            if not file:
-                return BaseView.error('请选择文件')
-
-            # 保存临时文件
-            import tempfile
-            import os
-            file_ext = os.path.splitext(file.name)[1].lower()
-
-            with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp_file:
-                for chunk in file.chunks():
-                    tmp_file.write(chunk)
-                tmp_path = tmp_file.name
-
-            try:
-                from app.services.import_service import ImportService
-
-                if file_ext == '.xlsx' or file_ext == '.xls':
-                    success, fail, errors = ImportService.import_students_from_excel(tmp_path)
-                elif file_ext == '.csv':
-                    success, fail, errors = ImportService.import_students_from_csv(tmp_path)
-                else:
-                    return BaseView.error('不支持的文件格式，请上传Excel或CSV文件')
-
-                result = {
-                    'success': success,
-                    'fail': fail,
-                    'errors': errors[:50]  # 最多返回50个错误
-                }
-
-                if success > 0:
-                    return BaseView.successData(result)
-                else:
-                    return BaseView.warn(f'导入失败: {"; ".join(errors[:5])}')
-            finally:
-                # 删除临时文件
-                if os.path.exists(tmp_path):
-                    os.remove(tmp_path)
-        except Exception as e:
-            return BaseView.error(f'导入失败: {str(e)}')
+        from app.views.admin_export_views import AdminExportView
+        return AdminExportView.import_students(request)
 
     # 下载学生导入模板
     @staticmethod
     def downloadStudentsTemplate(request):
-        """下载学生导入模板"""
-        try:
-            from app.services.import_service import ImportService
-            import os
-
-            template_path = ImportService.download_student_template()
-
-            with open(template_path, 'rb') as f:
-                response = HttpResponse(
-                    f.read(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-                response['Content-Disposition'] = 'attachment; filename="students_template.xlsx"'
-
-            # 删除临时文件
-            if os.path.exists(template_path):
-                os.remove(template_path)
-
-            return response
-        except Exception as e:
-            return BaseView.error(f'下载模板失败: {str(e)}')
+        from app.views.admin_export_views import AdminExportView
+        return AdminExportView.download_students_template(request)
 
     # 获取考试统计
     @staticmethod
     def getExamStatistics(request):
-        """获取考试统计信息"""
-        try:
-            exam_id = request.GET.get('examId')
-            if not exam_id:
-                return BaseView.error('请提供考试ID')
-
-            from app.services.statistics_service import StatisticsService
-            statistics = StatisticsService.get_exam_statistics(int(exam_id))
-
-            if 'error' in statistics:
-                return BaseView.error(statistics['error'])
-
-            return BaseView.successData(statistics)
-        except Exception as e:
-            return BaseView.error(f'获取统计失败: {str(e)}')
+        from app.views.admin_statistics_views import AdminStatisticsView
+        return AdminStatisticsView.get_exam_statistics(request)
 
     # 获取学生学习统计
     @staticmethod
     def getStudentStatistics(request):
-        """获取学生学习趋势"""
-        try:
-            student_id = request.GET.get('studentId')
-            days = int(request.GET.get('days', 30))
-
-            if not student_id:
-                return BaseView.error('请提供学生ID')
-
-            from app.services.statistics_service import StatisticsService
-            statistics = StatisticsService.get_student_learning_trend(int(student_id), days)
-
-            if 'error' in statistics:
-                return BaseView.error(statistics['error'])
-
-            return BaseView.successData(statistics)
-        except Exception as e:
-            return BaseView.error(f'获取统计失败: {str(e)}')
+        from app.views.admin_statistics_views import AdminStatisticsView
+        return AdminStatisticsView.get_student_statistics(request)
 
     # 获取班级统计
     @staticmethod
     def getClassStatistics(request):
-        """获取班级成绩统计"""
-        try:
-            grade_id = request.GET.get('gradeId')
-            if not grade_id:
-                return BaseView.error('请提供班级ID')
-
-            from app.services.statistics_service import StatisticsService
-            statistics = StatisticsService.get_class_performance_statistics(int(grade_id))
-
-            if 'error' in statistics:
-                return BaseView.error(statistics['error'])
-
-            return BaseView.successData(statistics)
-        except Exception as e:
-            return BaseView.error(f'获取统计失败: {str(e)}')
+        from app.views.admin_statistics_views import AdminStatisticsView
+        return AdminStatisticsView.get_class_statistics(request)
 
     # 获取科目统计
     @staticmethod
     def getSubjectStatistics(request):
-        """获取科目统计信息"""
-        try:
-            project_id = request.GET.get('projectId')
-            if not project_id:
-                return BaseView.error('请提供科目ID')
-
-            from app.services.statistics_service import StatisticsService
-            statistics = StatisticsService.get_subject_statistics(int(project_id))
-
-            if 'error' in statistics:
-                return BaseView.error(statistics['error'])
-
-            return BaseView.successData(statistics)
-        except Exception as e:
-            return BaseView.error(f'获取统计失败: {str(e)}')
+        from app.views.admin_statistics_views import AdminStatisticsView
+        return AdminStatisticsView.get_subject_statistics(request)
 
     # 导出学生列表
     @staticmethod
     def exportStudents(request):
-        """导出学生列表"""
-        try:
-            grade_id = request.GET.get('gradeId')
-            college_id = request.GET.get('collegeId')
-
-            from app.services.export_service import ExportService
-            response = ExportService.export_student_list(
-                grade_id=int(grade_id) if grade_id else None,
-                college_id=int(college_id) if college_id else None
-            )
-            return response
-        except Exception as e:
-            return BaseView.error(f'导出失败: {str(e)}')
+        from app.views.admin_export_views import AdminExportView
+        return AdminExportView.export_students(request)
 
     # 导出教师列表
     @staticmethod
     def exportTeachers(request):
-        """导出教师列表"""
-        try:
-            from app.services.export_service import ExportService
-            response = ExportService.export_teacher_list()
-            return response
-        except Exception as e:
-            return BaseView.error(f'导出失败: {str(e)}')
+        from app.views.admin_export_views import AdminExportView
+        return AdminExportView.export_teachers(request)
 
     # 导出考试结果
     @staticmethod
     def exportExamResults(request):
-        """导出考试结果"""
-        try:
-            exam_id = request.GET.get('examId')
-            if not exam_id:
-                return BaseView.error('请提供考试ID')
-
-            from app.services.export_service import ExportService
-            response = ExportService.export_exam_results(int(exam_id))
-            return response
-        except Exception as e:
-            return BaseView.error(f'导出失败: {str(e)}')
+        from app.views.admin_export_views import AdminExportView
+        return AdminExportView.export_exam_results(request)
 
     # 导出练习结果
     @staticmethod
     def exportPracticeResults(request):
-        """导出练习结果"""
-        try:
-            practice_id = request.GET.get('practiceId')
-            if not practice_id:
-                return BaseView.error('请提供练习ID')
-
-            from app.services.export_service import ExportService
-            response = ExportService.export_practice_results(int(practice_id))
-            return response
-        except Exception as e:
-            return BaseView.error(f'导出失败: {str(e)}')
+        from app.views.admin_export_views import AdminExportView
+        return AdminExportView.export_practice_results(request)
 
 
 class AIView(BaseView):

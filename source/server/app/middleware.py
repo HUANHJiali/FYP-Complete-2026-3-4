@@ -4,8 +4,7 @@ API限流中间件
 """
 from django.core.cache import cache
 from django.http import JsonResponse
-from comm.BaseView import BaseView
-import time
+from django.conf import settings
 
 
 class RateLimitMiddleware:
@@ -16,6 +15,7 @@ class RateLimitMiddleware:
     
     def __init__(self, get_response):
         self.get_response = get_response
+        self.trust_proxy_headers = getattr(settings, 'TRUST_PROXY_HEADERS', False)
         # 限流配置：每分钟最多请求次数
         self.rate_limits = {
             '/api/login/': 10,  # 登录接口：每分钟10次
@@ -30,9 +30,7 @@ class RateLimitMiddleware:
         path = request.path
         
         # 获取该路径的限流配置
-        limit = self.rate_limits.get(path) or self.rate_limits.get(
-            path.split('/')[1] + '/', self.rate_limits['default']
-        )
+        limit = self.get_rate_limit(path)
         
         # 检查是否超过限制
         cache_key = f'ratelimit:{client_ip}:{path}'
@@ -50,12 +48,38 @@ class RateLimitMiddleware:
         
         response = self.get_response(request)
         return response
+
+    def get_rate_limit(self, path):
+        """根据请求路径解析限流阈值（精确匹配优先，其次前缀匹配，最后默认）。"""
+        if path in self.rate_limits:
+            return self.rate_limits[path]
+
+        prefix_limits = [
+            (prefix, limit)
+            for prefix, limit in self.rate_limits.items()
+            if prefix != 'default' and path.startswith(prefix)
+        ]
+        if prefix_limits:
+            # 使用最长前缀，保证更具体的规则优先
+            return max(prefix_limits, key=lambda item: len(item[0]))[1]
+
+        return self.rate_limits['default']
     
     def get_client_ip(self, request):
         """获取客户端IP地址"""
-        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-        if x_forwarded_for:
-            ip = x_forwarded_for.split(',')[0]
-        else:
-            ip = request.META.get('REMOTE_ADDR')
-        return ip
+        if self.trust_proxy_headers:
+            x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+            if x_forwarded_for:
+                parts = [item.strip() for item in x_forwarded_for.split(',') if item.strip()]
+                if parts:
+                    return parts[0]
+
+            x_real_ip = request.META.get('HTTP_X_REAL_IP')
+            if x_real_ip and x_real_ip.strip():
+                return x_real_ip.strip()
+
+        remote_addr = request.META.get('REMOTE_ADDR')
+        if remote_addr and str(remote_addr).strip():
+            return str(remote_addr).strip()
+
+        return 'unknown'

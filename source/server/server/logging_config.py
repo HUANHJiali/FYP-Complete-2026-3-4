@@ -3,7 +3,6 @@
 统一日志格式、级别和输出
 """
 import os
-import logging
 from pathlib import Path
 
 # 创建日志目录
@@ -77,6 +76,15 @@ LOGGING = {
             'formatter': 'verbose',
             'encoding': 'utf-8',
         },
+        'performance_file': {
+            'level': 'INFO',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': str(LOG_DIR / 'performance.log'),
+            'maxBytes': 10 * 1024 * 1024,  # 10MB
+            'backupCount': 10,
+            'formatter': 'verbose',
+            'encoding': 'utf-8',
+        },
     },
     'loggers': {
         'django': {
@@ -107,6 +115,11 @@ LOGGING = {
         'app.comm': {
             'handlers': ['console', 'file'],
             'level': LOG_LEVEL,
+            'propagate': False,
+        },
+        'performance': {
+            'handlers': ['console', 'performance_file'],
+            'level': 'INFO',
             'propagate': False,
         },
     },

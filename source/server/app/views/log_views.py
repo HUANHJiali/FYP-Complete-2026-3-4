@@ -11,18 +11,24 @@ from django.http import HttpResponse, JsonResponse
 from django.views import View
 from django.db.models import Q
 from django.core.paginator import Paginator
-from django.views.decorators.csrf import csrf_exempt
-from django.utils.decorators import method_decorator
 from app.models import OperationLog
+from app.permissions import get_user_from_request
 from utils.OperationLogger import OperationLogger
 from comm.BaseView import BaseView
 
 logger = logging.getLogger(__name__)
 
 
-@method_decorator(csrf_exempt, name='dispatch')
 class LogViews(BaseView):
     """操作日志管理视图"""
+
+    def _require_admin(self, request):
+        user = get_user_from_request(request)
+        if not user:
+            return None, BaseView.error('用户未登录')
+        if user.type != 0:
+            return None, BaseView.error('权限不足')
+        return user, None
 
     def get(self, request):
         """
@@ -30,6 +36,10 @@ class LogViews(BaseView):
         支持分页和多种过滤条件
         """
         try:
+            _, err = self._require_admin(request)
+            if err:
+                return err
+
             # 获取查询参数
             page_index = int(request.GET.get('pageIndex', 1))
             page_size = int(request.GET.get('pageSize', 10))
@@ -131,6 +141,10 @@ class LogViews(BaseView):
         批量删除操作日志
         """
         try:
+            _, err = self._require_admin(request)
+            if err:
+                return err
+
             # 获取要删除的日志ID列表
             log_ids = request.GET.get('ids', '').strip()
 
@@ -165,6 +179,10 @@ class LogViews(BaseView):
         导出操作日志为CSV文件
         """
         try:
+            _, err = self._require_admin(request)
+            if err:
+                return err
+
             import json
 
             # 解析请求体

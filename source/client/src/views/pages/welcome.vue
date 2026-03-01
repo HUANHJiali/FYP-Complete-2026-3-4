@@ -90,25 +90,46 @@
                     <template #title>
                         <div class="card-title">
                             <Icon type="ios-stats" class="title-icon" />
-                            <span>系统概览</span>
+							<span>{{ roleType === 0 ? '管理概览' : (roleType === 1 ? '教学概览' : '学习概览') }}</span>
                         </div>
                     </template>
-                    <Row :gutter="12">
-                        <Col span="4"><div class="stat-card"><div class="stat-value">{{ today.todayNewQuestions }}</div><div class="stat-label">今日新增题目</div></div></Col>
-                        <Col span="4"><div class="stat-card"><div class="stat-value">{{ today.todayNewPractices }}</div><div class="stat-label">今日新增练习</div></div></Col>
-                        <Col span="4"><div class="stat-card"><div class="stat-value">{{ today.todayNewExams }}</div><div class="stat-label">今日新增考试</div></div></Col>
-                        <Col span="4"><div class="stat-card"><div class="stat-value">{{ trend.activeUsers7d }}</div><div class="stat-label">近7天活跃用户</div></div></Col>
-                        <Col span="4"><div class="stat-card"><div class="stat-value">{{ trend.passRate7d }}%</div><div class="stat-label">近7天通过率</div></div></Col>
-                        <Col span="4"><div class="stat-card"><div class="stat-value">{{ trend.avgScore7d }}</div><div class="stat-label">近7天平均分</div></div></Col>
-                    </Row>
-                    <Row :gutter="12" style="margin-top:12px;">
-                        <Col span="4"><div class="stat-card warn"><div class="stat-value">{{ review.pendingReviews }}</div><div class="stat-label">待人工覆核数</div></div></Col>
-                    </Row>
+					<div v-if="!roleReady" style="padding: 20px 0; text-align: center;">
+						<Spin size="large" />
+					</div>
+					<template v-else-if="roleType === 0">
+						<Row :gutter="12">
+							<Col span="4"><div class="stat-card"><div class="stat-value">{{ today.todayNewQuestions }}</div><div class="stat-label">今日新增题目</div></div></Col>
+							<Col span="4"><div class="stat-card"><div class="stat-value">{{ today.todayNewPractices }}</div><div class="stat-label">今日新增练习</div></div></Col>
+							<Col span="4"><div class="stat-card"><div class="stat-value">{{ today.todayNewExams }}</div><div class="stat-label">今日新增考试</div></div></Col>
+							<Col span="4"><div class="stat-card"><div class="stat-value">{{ trend.activeUsers7d }}</div><div class="stat-label">近7天活跃用户</div></div></Col>
+							<Col span="4"><div class="stat-card"><div class="stat-value">{{ trend.passRate7d }}%</div><div class="stat-label">近7天通过率</div></div></Col>
+							<Col span="4"><div class="stat-card"><div class="stat-value">{{ trend.avgScore7d }}</div><div class="stat-label">近7天平均分</div></div></Col>
+						</Row>
+						<Row :gutter="12" style="margin-top:12px;">
+							<Col span="4"><div class="stat-card warn"><div class="stat-value">{{ review.pendingReviews }}</div><div class="stat-label">待人工覆核数</div></div></Col>
+						</Row>
+					</template>
+					<template v-else-if="roleType === 1">
+						<Row :gutter="12">
+							<Col span="6"><div class="stat-card"><div class="stat-value">{{ teacherStats.totalLogs }}</div><div class="stat-label">考试记录总数</div></div></Col>
+							<Col span="6"><div class="stat-card"><div class="stat-value">{{ teacherStats.ongoingExams }}</div><div class="stat-label">考试中</div></div></Col>
+							<Col span="6"><div class="stat-card warn"><div class="stat-value">{{ teacherStats.pendingPublish }}</div><div class="stat-label">待公布成绩</div></div></Col>
+							<Col span="6"><div class="stat-card"><div class="stat-value">{{ teacherStats.finishedExams }}</div><div class="stat-label">已完成处理</div></div></Col>
+						</Row>
+					</template>
+					<template v-else>
+						<Row :gutter="12">
+							<Col span="6"><div class="stat-card"><div class="stat-value">{{ studentStats.availableExams }}</div><div class="stat-label">可参加考试</div></div></Col>
+							<Col span="6"><div class="stat-card"><div class="stat-value">{{ studentStats.practicePapers }}</div><div class="stat-label">可用练习试卷</div></div></Col>
+							<Col span="6"><div class="stat-card warn"><div class="stat-value">{{ studentStats.pendingTasks }}</div><div class="stat-label">待完成任务</div></div></Col>
+							<Col span="6"><div class="stat-card"><div class="stat-value">{{ studentStats.completedTasks }}</div><div class="stat-label">已完成任务</div></div></Col>
+						</Row>
+					</template>
                 </Card>
             </Col>
         </Row>
 
-        <Card style="margin-top:16px;">
+		<Card v-if="roleType === 0" style="margin-top:16px;">
             <template #title>
                 <div class="card-title">
                     <Icon type="ios-trending-up" class="title-icon" />
@@ -129,6 +150,40 @@
                 </Col>
             </Row>
         </Card>
+
+		<Card v-else-if="roleType === 1" style="margin-top:16px;">
+			<template #title>
+				<div class="card-title">
+					<Icon type="ios-trending-up" class="title-icon" />
+					<span>教学趋势</span>
+				</div>
+			</template>
+			<Row :gutter="12">
+				<Col span="12">
+					<div style="height:300px;" ref="chartTeacherStatus"></div>
+				</Col>
+				<Col span="12">
+					<div style="height:300px;" ref="chartTeacherProject"></div>
+				</Col>
+			</Row>
+		</Card>
+
+		<Card v-else-if="roleType === 2" style="margin-top:16px;">
+			<template #title>
+				<div class="card-title">
+					<Icon type="ios-trending-up" class="title-icon" />
+					<span>学习趋势</span>
+				</div>
+			</template>
+			<Row :gutter="12">
+				<Col span="12">
+					<div style="height:300px;" ref="chartStudentExam"></div>
+				</Col>
+				<Col span="12">
+					<div style="height:300px;" ref="chartStudentTask"></div>
+				</Col>
+			</Row>
+		</Card>
 
         
     </div>
@@ -353,103 +408,142 @@ import * as echarts from 'echarts/core'
 import { BarChart, LineChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
+import { getEmptyTeacherStats, getEmptyStudentStats } from '../../utils/welcomeDashboard'
+import { buildAdminQuestionsOption, buildAdminActiveOption, buildAdminDoneOption, buildTeacherStatusOption, buildTeacherProjectOption, buildStudentExamOption, buildStudentTaskOption } from '../../utils/welcomeChartOptions'
+import { setChartInstance, disposeAllChartInstances } from '../../utils/chartInstanceManager'
+import { resolveWelcomeRole, fetchAdminDashboardBundle, fetchTeacherDashboardBundle, fetchStudentDashboardBundle } from '../../utils/welcomeDataProvider'
+import { shouldShowWelcomeGuide, markWelcomeGuideHidden, scheduleWelcomeGuide, clearWelcomeGuideTimer } from '../../utils/welcomeGuide'
+import { getEmptyAdminToday, getEmptyAdminTrend, getEmptyAdminReview, createWelcomeChartInstances } from '../../utils/welcomeDefaults'
 echarts.use([BarChart, LineChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer])
 
 export default{
     data(){
         return {
-            today: { todayNewQuestions: 0, todayNewPractices: 0, todayNewExams: 0 },
-            trend: { activeUsers7d: 0, passRate7d: 0, avgScore7d: 0 },
-            review: { pendingReviews: 0 },
+            today: getEmptyAdminToday(),
+            trend: getEmptyAdminTrend(),
+            review: getEmptyAdminReview(),
+			isAdmin: false,
+			roleType: null,
+			roleReady: false,
+			teacherStats: getEmptyTeacherStats(),
+			studentStats: getEmptyStudentStats(),
+			chartInstances: createWelcomeChartInstances(),
             // 欢迎引导
             showWelcomeGuide: false,
             currentSlide: 0,
-            dontShowAgain: false
+			dontShowAgain: false,
+			welcomeGuideTimer: null
 
         }
     },
     methods:{
-        async loadDashboard(){
-            try{
-                const api = await import('../../utils/http.js')
-                const resp = await api.default.get('/admin/dashboard_cards/')
-                if(resp.code === 0){
-                    const d = resp.data || {}
-                    this.today = { todayNewQuestions: d.todayNewQuestions || 0, todayNewPractices: d.todayNewPractices || 0, todayNewExams: d.todayNewExams || 0 }
-                    this.trend = { activeUsers7d: d.activeUsers7d || 0, passRate7d: d.passRate7d || 0, avgScore7d: d.avgScore7d || 0 }
-                    this.review = { pendingReviews: d.pendingReviews || 0 }
+		async initDashboardByRole(){
+			try{
+				const token = (this.$store && this.$store.state && this.$store.state.token) || sessionStorage.getItem('token') || ''
+				if (!token) {
+                    this.roleReady = true
+                    return
                 }
+				const roleData = await resolveWelcomeRole(token)
+				this.roleType = roleData.roleType
+				this.isAdmin = roleData.isAdmin
+				if (this.roleType === 0){
+					await this.loadDashboardAndTrends()
+				} else if (this.roleType === 1) {
+                    await this.loadTeacherDashboard(token)
+                } else if (this.roleType === 2) {
+                    await this.loadStudentDashboard(token)
+				}
+			}catch(e){
+				this.roleType = null
+				this.isAdmin = false
+			} finally {
+                this.roleReady = true
+			}
+		},
+        async loadDashboardAndTrends(){
+            try{
+				const bundle = await fetchAdminDashboardBundle()
+				const cardsData = bundle.cardsData || {}
+				const trendsData = bundle.trendsData || {}
+				this.today = {
+					...getEmptyAdminToday(),
+					todayNewQuestions: cardsData.todayNewQuestions ?? 0,
+					todayNewPractices: cardsData.todayNewPractices ?? 0,
+					todayNewExams: cardsData.todayNewExams ?? 0
+				}
+				this.trend = {
+					...getEmptyAdminTrend(),
+					activeUsers7d: cardsData.activeUsers7d ?? 0,
+					passRate7d: cardsData.passRate7d ?? 0,
+					avgScore7d: cardsData.avgScore7d ?? 0
+				}
+				this.review = {
+					...getEmptyAdminReview(),
+					pendingReviews: cardsData.pendingReviews ?? 0
+				}
+				this.$nextTick(() => this.renderAdminTrends(trendsData))
             }catch(e){
                 // ignore
             }
         }
         ,
-        async loadTrends(){
-            try{
-                const api = await import('../../utils/http.js')
-                const resp = await api.default.get('/admin/trends/')
-                if(resp.code === 0){
-                    const d = resp.data || {}
-                    // 题目月度新增（柱状）
-                    const chartQuestions = echarts.init(this.$refs.chartQuestions)
-                    chartQuestions.setOption({
-                        tooltip: { trigger: 'axis' },
-                        grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-                        xAxis: { type: 'category', data: d.months || [] },
-                        yAxis: { type: 'value' },
-                        series: [{ name: '题目数', type: 'bar', data: d.questionsByMonth || [], barWidth: '50%' }]
-                    })
-                    // 活跃用户（折线）
-                    const chartActive = echarts.init(this.$refs.chartActive)
-                    chartActive.setOption({
-                        tooltip: { trigger: 'axis' },
-                        grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-                        xAxis: { type: 'category', data: d.days || [], boundaryGap: false },
-                        yAxis: { type: 'value' },
-                        series: [{ name: '活跃用户', type: 'line', smooth: true, data: d.activeUsersDaily || [] }]
-                    })
-                    // 练习/任务完成（堆叠柱状）
-                    const chartDone = echarts.init(this.$refs.chartDone)
-                    chartDone.setOption({
-                        tooltip: { trigger: 'axis' },
-                        legend: { data: ['练习完成', '任务完成'] },
-                        grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-                        xAxis: { type: 'category', data: d.days || [] },
-                        yAxis: { type: 'value' },
-                        series: [
-                            { name: '练习完成', type: 'bar', stack: 'total', data: d.practiceDoneDaily || [] },
-                            { name: '任务完成', type: 'bar', stack: 'total', data: d.taskDoneDaily || [] }
-                        ]
-                    })
-                }
-            }catch(e){
-                // ignore
-            }
-        }
-        ,
+		renderAdminTrends(data){
+			setChartInstance(this.chartInstances, 'chartQuestions', this.$refs.chartQuestions, echarts, buildAdminQuestionsOption(data))
+			setChartInstance(this.chartInstances, 'chartActive', this.$refs.chartActive, echarts, buildAdminActiveOption(data))
+			setChartInstance(this.chartInstances, 'chartDone', this.$refs.chartDone, echarts, buildAdminDoneOption(data))
+		}
+		,
+		async loadTeacherDashboard(token){
+			const teacherData = await fetchTeacherDashboardBundle(token)
+			this.teacherStats = teacherData.stats || getEmptyTeacherStats()
+			this.$nextTick(() => this.renderTeacherTrends(teacherData.chart || { statusData: [0, 0, 0], projectNames: ['暂无数据'], projectValues: [0] }))
+		}
+		,
+		async loadStudentDashboard(token){
+			const studentData = await fetchStudentDashboardBundle(token)
+			this.studentStats = studentData.stats || getEmptyStudentStats()
+			this.$nextTick(() => this.renderStudentTrends(studentData.chart || { examSeries: [0, 0, 0, 0], taskSeries: [0, 0, 0, 0] }))
+		}
+		,
+		renderTeacherTrends(chartData){
+			if (!this.$refs.chartTeacherStatus || !this.$refs.chartTeacherProject) return
+
+			setChartInstance(this.chartInstances, 'chartTeacherStatus', this.$refs.chartTeacherStatus, echarts, buildTeacherStatusOption(chartData))
+
+			setChartInstance(this.chartInstances, 'chartTeacherProject', this.$refs.chartTeacherProject, echarts, buildTeacherProjectOption(chartData))
+		}
+		,
+		renderStudentTrends(chartData){
+			if (!this.$refs.chartStudentExam || !this.$refs.chartStudentTask) return
+
+			setChartInstance(this.chartInstances, 'chartStudentExam', this.$refs.chartStudentExam, echarts, buildStudentExamOption(chartData))
+
+			setChartInstance(this.chartInstances, 'chartStudentTask', this.$refs.chartStudentTask, echarts, buildStudentTaskOption(chartData))
+		}
+		,
         // 关闭欢迎引导
         closeWelcomeGuide() {
-            if (this.dontShowAgain) {
-                localStorage.setItem('fyp_welcome_guide_shown', 'true');
-            }
+			markWelcomeGuideHidden(this.dontShowAgain)
             this.showWelcomeGuide = false;
         },
         // 检查是否显示欢迎引导
         checkWelcomeGuide() {
-            const hasShown = localStorage.getItem('fyp_welcome_guide_shown');
-            if (!hasShown) {
-                // 延迟 1 秒显示，让用户先看到页面
-                setTimeout(() => {
-                    this.showWelcomeGuide = true;
-                }, 1000);
+			if (shouldShowWelcomeGuide()) {
+				this.welcomeGuideTimer = scheduleWelcomeGuide(() => {
+					this.showWelcomeGuide = true
+				}, 1000)
             }
         }
     },
     mounted(){
-        this.loadDashboard()
-        this.$nextTick(() => this.loadTrends())
+		this.initDashboardByRole()
         // 检查是否显示欢迎引导
         this.checkWelcomeGuide()
+	},
+	beforeUnmount() {
+		clearWelcomeGuideTimer(this.welcomeGuideTimer)
+		disposeAllChartInstances(this.chartInstances)
     }
 }
 </script>

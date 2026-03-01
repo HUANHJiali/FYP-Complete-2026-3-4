@@ -9,6 +9,8 @@
 - **AI服务**: 智谱AI (GLM-4-Flash)
 - **认证**: JWT Token
 - **API**: Django REST Framework
+- **缓存**: LocMem/Redis（环境变量切换）
+- **性能观测**: API性能中间件 + 慢SQL日志
 
 ## 本地开发部署
 
@@ -148,8 +150,31 @@ python manage.py test app.tests.TestClass
 2. **数据库**: 确保MySQL服务正常运行
 3. **AI配置**: 配置智谱AI API密钥（仅在启用AI功能时需要）
 4. **静态文件**: 生产环境运行 `python manage.py collectstatic --noinput` 并由 Nginx 提供 `/static/`、`/media/`
-5. **安全设置**: 生产设置 `DEBUG=False`，更换强随机 `SECRET_KEY`
+5. **安全设置**: 生产设置 `DEBUG=False`，并通过环境变量提供强随机 `SECRET_KEY`
 6. **驱动兼容**: Windows 上如 `mysqlclient` 构建失败，可使用 `PyMySQL` 作为兼容方案
+7. **CSRF策略**: 使用路径白名单豁免（默认 `/api/`），Django Admin 仍保留 CSRF 保护
+8. **限流策略**: `ENABLE_RATE_LIMIT=True` 与 `RATELIMIT_ENABLE=True` 建议保持开启
+9. **代理头信任**: 默认 `TRUST_PROXY_HEADERS=False`；仅在可信 Nginx/Ingress 后并已限制来源时开启
+
+## 风险项（答辩版）
+
+1. **外部依赖风险**: 未配置 `ZHIPUAI_API_KEY` 时，AI接口不可用（不影响核心登录/考试/练习链路）
+2. **数据库依赖风险**: 本机未启动 MySQL 时，`/api/health/` 可能非 200
+3. **跨域配置风险**: `CORS_ALLOWED_ORIGINS` / `CSRF_TRUSTED_ORIGINS` 配置不当会导致前端请求失败
+4. **限流误伤风险**: 低阈值限流可能影响压测或批量操作，可按需调节
+5. **代理伪造风险**: 非可信代理链路下开启 `TRUST_PROXY_HEADERS=True` 可能被伪造客户端IP
+
+## 验收步骤（建议顺序）
+
+```bash
+python manage.py check
+python tools/run_regression_baseline.py
+python tools/run_defense_demo_check.py
+```
+
+说明：
+- `run_defense_demo_check.py` 默认非严格健康检查（`/api/health/`失败只告警）
+- 严格模式可设置：`STRICT_HEALTH=1 python tools/run_defense_demo_check.py`
 
 ### 生产部署（快速参考）
 

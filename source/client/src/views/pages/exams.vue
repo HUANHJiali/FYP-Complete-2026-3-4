@@ -98,7 +98,7 @@
                     <template #action="{ row }">
                         <div class="action-container">
                             <Button 
-                                v-if="row.status !== 2" 
+                                v-if="normalizeLifecycleStatus(row) !== 'completed'" 
                                 @click="startExam(row.id)" 
                                 size="small" 
                                 type="info"
@@ -230,7 +230,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    color: #fff;
+    color: #000;
     box-shadow: 0 10px 30px rgba(24, 144, 255, 0.3);
 }
 
@@ -242,21 +242,21 @@
 
 .header-icon {
     font-size: 40px;
-    color: #fff;
+    color: #000;
 }
 
 .header-text h2 {
     font-size: 28px;
     font-weight: 600;
     margin: 0 0 5px 0;
-    color: #fff;
+    color: #000;
 }
 
 .header-text p {
     font-size: 14px;
     opacity: 0.9;
     margin: 0;
-    color: rgba(255, 255, 255, 0.9);
+    color: #000;
 }
 
 .header-stats {
@@ -282,13 +282,13 @@
     font-size: 24px;
     font-weight: bold;
     margin-bottom: 5px;
-    color: #fff;
+    color: #000;
 }
 
 .stat-label {
     font-size: 12px;
     opacity: 0.8;
-    color: rgba(255, 255, 255, 0.9);
+    color: #000;
 }
 
 .search-card, .data-card {
@@ -364,7 +364,7 @@
     padding: 8px 20px;
     font-weight: 500;
     transition: all 0.3s ease;
-    color: #fff;
+    color: #000;
 }
 
 .search-btn:hover {
@@ -379,7 +379,7 @@
     margin-left: auto;
     font-weight: 500;
     transition: all 0.3s ease;
-    color: #fff;
+    color: #000;
 }
 
 .add-btn:hover {
@@ -399,7 +399,7 @@
 .modern-table .ivu-table th {
     background: linear-gradient(135deg, #1890ff 0%, #0050b3 100%);
     font-weight: 600;
-    color: #fff;
+    color: #000;
 }
 
 .modern-table .ivu-table td {
@@ -441,7 +441,7 @@
     border-radius: 6px;
     font-weight: 500;
     transition: all 0.3s ease;
-    color: #fff;
+    color: #000;
 }
 
 .start-btn:hover {
@@ -462,7 +462,7 @@
 
 .modern-pagination .ivu-page-item:hover {
     background: #1890ff;
-    color: #fff;
+    color: #000;
 }
 
 .modern-pagination .ivu-page-item-active {
@@ -472,12 +472,12 @@
 
 .modern-modal .ivu-modal-header {
     background: linear-gradient(135deg, #1890ff 0%, #0050b3 100%);
-    color: #fff;
+    color: #000;
     border-radius: 8px 8px 0 0;
 }
 
 .modern-modal .ivu-modal-header-inner {
-    color: #fff;
+    color: #000;
     font-weight: 600;
 }
 
@@ -539,6 +539,7 @@ import {
     formatDate,
     contrastNow
 } from '../../utils/date.js';
+import { normalizeLifecycleStatus } from '../../utils/lifecycleStatus';
 import authMixin from '@/mixins/authMixin';
 
 export default{
@@ -577,10 +578,11 @@ export default{
     },
     computed: {
         activeExams() {
-            return this.pageInfos.filter(exam => exam.status === 0).length;
+            return this.pageInfos.filter(exam => this.normalizeLifecycleStatus(exam) === 'in_progress').length;
         }
     },
     methods:{
+		normalizeLifecycleStatus,
 		getPageInfo(pageIndex, pageSize) {
 			
             getPageExams(pageIndex, pageSize,
@@ -589,23 +591,10 @@ export default{
 
                 const page = resp.data || {};
                 const list = page.data || [];
-                const now = new Date();
                 list.forEach(item => {
-                    const hasStart = !!item.startTime;
-                    const hasEnd = !!item.endTime;
-                    if (hasStart || hasEnd) {
-                        const s = hasStart ? new Date(String(item.startTime).replace(/-/g,'/')) : null;
-                        const e = hasEnd ? new Date(String(item.endTime).replace(/-/g,'/')) : null;
-                        if (s && now < s) item.status = 1; // 未开始
-                        else if (e && now > e) item.status = 2; // 已结束
-                        else item.status = 0; // 进行中
-                    } else {
-                        // 兼容旧逻辑：examTime <= now 视为进行中，否则未开始
+                    // 兜底：后端未返回统一字段时，兼容旧逻辑
+                    if (!item.lifecycleStatus) {
                         item.status = contrastNow(item.examTime) <= 0 ? 0 : 1;
-                    }
-                    // 如果该学生已经有考试日志且状态为2（结束），强制标记为已结束
-                    if (item.studentStatus === 2) {
-                        item.status = 2;
                     }
                 });
 
@@ -639,7 +628,19 @@ export default{
             this.showAddFlag = true;
         },
         addInfo() {
-			
+            if (!this.examForm.name) {
+                this.$Message.warning({ background: true, content: '请输入考试名称' });
+                return;
+            }
+            if (!this.examForm.gradeId) {
+                this.$Message.warning({ background: true, content: '请选择考核班级' });
+                return;
+            }
+            if (!this.examForm.projectId) {
+                this.$Message.warning({ background: true, content: '请选择考核科目' });
+                return;
+            }
+
             this.examForm.examTime = this.examForm.examTime ? formatDate(this.examForm.examTime) : '';
             this.examForm.startTime = this.examForm.startTime ? formatDate(this.examForm.startTime) : '';
             this.examForm.endTime = this.examForm.endTime ? formatDate(this.examForm.endTime) : '';
@@ -663,6 +664,10 @@ export default{
                     });
                     this.showAddFlag = true;
                 }
+            }).catch((error) => {
+                const msg = error?.msg || error?.response?.data?.msg || '创建考试失败';
+                this.$Message.error({ background: true, content: msg });
+                this.showAddFlag = true;
             });
         },
         startExam(id){

@@ -39,6 +39,15 @@ def _log_export_operation(request, operation_type, detail, status=1):
 
 class BackupViews:
     """数据备份和导出功能"""
+
+    @staticmethod
+    def _require_admin(request):
+        user = get_user_from_request(request)
+        if not user:
+            return None, BaseView.error('用户未登录')
+        if user.type != 0:
+            return None, BaseView.error('权限不足')
+        return user, None
     
     @staticmethod
     def export_system_data(request):
@@ -52,6 +61,10 @@ class BackupViews:
         返回:
             备份文件下载
         """
+        _, err = BackupViews._require_admin(request)
+        if err:
+            return err
+
         data_type = request.GET.get('dataType', 'all')
         export_format = request.GET.get('format', 'json')
         
@@ -175,6 +188,10 @@ class BackupViews:
         返回:
             学习报告PDF/HTML
         """
+        _, err = BackupViews._require_admin(request)
+        if err:
+            return err
+
         student_id = request.GET.get('studentId')
         time_range = request.GET.get('timeRange', 'semester')
         

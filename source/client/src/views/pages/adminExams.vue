@@ -148,6 +148,7 @@
 
 <script>
 import { getAdminExams, addAdminExam, updateAdminExam, deleteAdminExam, getAllProjects } from '@/api'
+import { normalizeLifecycleStatus, getLifecycleTagType, getLifecycleText } from '@/utils/lifecycleStatus'
 
 export default {
   name: 'AdminExams',
@@ -192,13 +193,14 @@ export default {
         },
         { title: '时长(分钟)', key: 'duration', width: 100 },
         { title: '总分', key: 'totalScore', width: 80 },
-        { title: '状态', key: 'isActive', width: 100,
+        { title: '状态', key: 'lifecycleStatus', width: 120,
           render: (h, params) => {
+            const status = normalizeLifecycleStatus(params.row)
             return h('Tag', {
               props: {
-                color: params.row.isActive ? 'success' : 'default'
+                color: getLifecycleTagType(status)
               }
-            }, params.row.isActive ? '启用' : '禁用')
+            }, params.row.lifecycleStatusText || getLifecycleText(status))
           }
         },
         { title: '创建时间', key: 'createTime', width: 150 },
@@ -342,8 +344,30 @@ export default {
 
     async handleSubmit() {
       try {
-        const valid = await this.$refs.formRef.validate()
-        if (!valid) return
+        if (!this.formData.title || !String(this.formData.title).trim()) {
+          this.$Message.warning('请输入试卷标题')
+          return
+        }
+        if (!this.formData.type) {
+          this.$Message.warning('请选择试卷类型')
+          return
+        }
+        if (!this.formData.project) {
+          this.$Message.warning('请选择学科')
+          return
+        }
+        if (!this.formData.duration && this.formData.duration !== 0) {
+          this.$Message.warning('请输入考试时长')
+          return
+        }
+        if (!this.formData.totalScore && this.formData.totalScore !== 0) {
+          this.$Message.warning('请输入总分')
+          return
+        }
+        if (this.formData.type === 'timed' && (!this.formData.startTime || !this.formData.endTime)) {
+          this.$Message.warning('时段试卷请填写开始和结束时间')
+          return
+        }
 
         let response
         if (this.isEdit) {
@@ -361,7 +385,8 @@ export default {
         }
       } catch (error) {
         console.error('操作失败:', error)
-        this.$Message.error('操作失败')
+        const msg = error?.msg || error?.response?.data?.msg || '操作失败'
+        this.$Message.error(msg)
       }
     },
 

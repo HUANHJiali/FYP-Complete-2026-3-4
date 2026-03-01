@@ -3,12 +3,13 @@ from app.views import (
     SysView, CollegesView, GradesView, ProjectsView,
     TeachersView, StudentsView, PractisesView, ExamsView,
     ExamLogsView, PracticePapersView, TasksView, WrongQuestionsView,
-    AdminView, AIView, OptionsView, AnswerLogsView, StudentPracticeView
+    AIView, OptionsView, AnswerLogsView, StudentPracticeView
 )
 from app.views.log_views import LogViews
 from app.views.health_view import health_check, health_check_simple
 from app.views.import_export_views import import_students, export_students_template
 from app.views.admin_views import AdminView as AdminViews
+from app.views.admin_statistics_views import AdminStatisticsView
 from app.views.backup_views import BackupViews
 from app.views.attachment_views import TaskAttachmentViews
 from app.views.theme_views import ThemeViews
@@ -39,13 +40,13 @@ urlpatterns = [
 
     # 系统相关（优先级最高，放在最前面）
     path('logs/', LogViews.as_view()),
-    path('admin/<str:module>/', AdminView.as_view()),
+    path('admin/<str:module>/', AdminViews.as_view()),
     
     # 新增：统计分析API
-    path('statistics/compare_classes/', AdminViews.compare_class_grades, name='compare_classes'),
-    path('statistics/student_progress/', AdminViews.compare_student_progress, name='student_progress'),
-    path('statistics/recommend_practice/', AdminViews.recommend_practice, name='recommend_practice'),
-    path('statistics/recommend_wrong/', AdminViews.recommend_wrong_questions, name='recommend_wrong'),
+    path('statistics/compare_classes/', AdminStatisticsView.compare_class_grades, name='compare_classes'),
+    path('statistics/student_progress/', AdminStatisticsView.compare_student_progress, name='student_progress'),
+    path('statistics/recommend_practice/', AdminStatisticsView.recommend_practice, name='recommend_practice'),
+    path('statistics/recommend_wrong/', AdminStatisticsView.recommend_wrong_questions, name='recommend_wrong'),
     
     # 新增：备份和导出API
     path('backup/export/', BackupViews.export_system_data, name='backup_export'),

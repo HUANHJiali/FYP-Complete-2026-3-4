@@ -178,6 +178,7 @@ import {
   deleteOperationLogs,
   exportOperationLogs
 } from '@/api/index.js'
+import { triggerBlobDownload } from '@/utils/fileDownload'
 
 export default {
   name: 'AdminLogs',
@@ -392,16 +393,7 @@ export default {
 
         const response = await exportOperationLogs(filters);
 
-        // 创建下载链接
-        const blob = new Blob([response.data], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement('a');
-        const url = window.URL.createObjectURL(blob);
-        link.setAttribute('href', url);
-        link.setAttribute('download', `operation_logs_${Date.now()}.csv`);
-        link.style.visibility = 'hidden';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        triggerBlobDownload(response.data, `operation_logs_${Date.now()}.csv`, 'text/csv;charset=utf-8;');
 
         this.$Message.success('导出成功');
       } catch (error) {

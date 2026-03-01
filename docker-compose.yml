@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # MySQL 数据库服务
   db:
@@ -15,9 +13,9 @@ services:
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     volumes:
       - mysql_data:/var/lib/mysql
-      - ./database/db_exam.sql:/docker-entrypoint-initdb.d/01-structure.sql
-      # - ./database/init_practice_data.sql:/docker-entrypoint-initdb.d/02-init-data.sql
-      - ./database/init_default_users.sql:/docker-entrypoint-initdb.d/03-default-users.sql
+      # 采用 Django 迁移建表，避免与历史 SQL 结构冲突
+      # - ./database/db_exam.sql:/docker-entrypoint-initdb.d/01-structure.sql
+      # - ./database/init_default_users.sql:/docker-entrypoint-initdb.d/03-default-users.sql
     ports:
       - "3307:3306"
     networks:
@@ -41,10 +39,16 @@ services:
     command: >
       bash -c "
       echo '等待数据库就绪...' &&
-      sleep 10 &&
+      until python -c \"import pymysql; pymysql.connect(host='db',user='examuser',password='exam123456',db='db_exam').close()\" 2>/dev/null; do
+        echo '  MySQL 尚未就绪，等待 2 秒...';
+        sleep 2;
+      done &&
+      echo 'MySQL 已就绪，开始初始化...' &&
       python manage.py migrate --noinput &&
+      (python tools/seed_default_users.py || echo '⚠️ 默认账号初始化失败，系统继续启动') &&
       python manage.py collectstatic --noinput || true &&
-      python manage.py runserver 0.0.0.0:8000
+      echo '启动 Gunicorn...' &&
+      gunicorn server.wsgi:application --bind 0.0.0.0:8000 --workers 1 --timeout 120 --reload
       "
     environment:
       # 数据库配置
@@ -65,8 +69,12 @@ services:
       # CORS 配置
       CORS_ALLOWED_ORIGINS: http://localhost:8080,http://127.0.0.1:8080
       CSRF_TRUSTED_ORIGINS: http://localhost:8080,http://127.0.0.1:8080
+      CSRF_EXEMPT_PATH_PREFIXES: /api/
+      ENABLE_RATE_LIMIT: "True"
+      RATELIMIT_ENABLE: "True"
+      TRUST_PROXY_HEADERS: "False"
       # AI 配置（可选）
-      ZHIPUAI_API_KEY: ${ZHIPUAI_API_KEY}
+      ZHIPUAI_API_KEY: ${ZHIPUAI_API_KEY:-}
       ZHIPUAI_MODEL: glm-4-flash
       ZHIPUAI_BASE_URL: https://open.bigmodel.cn/api/paas/v4
     volumes:
@@ -75,6 +83,12 @@ services:
       - "8000:8000"
     networks:
       - fyp_network
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health/simple/').read()\" 2>/dev/null || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 6
+      start_period: 40s
     stdin_open: true
     tty: true
 
@@ -86,10 +100,14 @@ services:
     container_name: fyp_frontend
     restart: unless-stopped
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     environment:
-      - VUE_APP_API_BASE_URL=http://localhost:8000
+      # Docker 内 proxy 直接访问后端容器，无需经过宿主机
+      - VUE_APP_BACKEND_URL=http://backend:8000
       - NODE_ENV=development
+      - CHOKIDAR_USEPOLLING=true
+      - WATCHPACK_POLLING=true
     volumes:
       - ./source/client:/app
       - /app/node_modules
@@ -97,6 +115,12 @@ services:
       - "8080:8080"
     networks:
       - fyp_network
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"const http=require('http');http.get('http://127.0.0.1:8080',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1));\""]
+      interval: 20s
+      timeout: 10s
+      retries: 8
+      start_period: 80s
     stdin_open: true
     tty: true
     extra_hosts:

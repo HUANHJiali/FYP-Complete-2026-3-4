@@ -1,10 +1,11 @@
 import json
 import os
 import re
+import difflib
 import requests
 import time
 import jwt
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Tuple
 from django.conf import settings
 from comm.CommUtils import DateUtil
 
@@ -48,6 +49,14 @@ class AIUtils:
         
         # 检查是否为智谱AI
         self.is_zhipuai = 'bigmodel.cn' in self.base_url
+        self.last_generation_report: Dict[str, Any] = {}
+
+        # 相似题过滤阈值（越高越严格，范围 0~1）
+        try:
+            threshold = float(os.getenv('AI_SIMILARITY_THRESHOLD', '0.88'))
+            self.similarity_threshold = min(0.98, max(0.7, threshold))
+        except Exception:
+            self.similarity_threshold = 0.88
     
     def ai_score_answer(self, question_content: str, correct_answer: str, 
                        student_answer: str, question_type: int, 
@@ -113,29 +122,73 @@ class AIUtils:
             prompt = self._build_question_generation_prompt(subject, topic, difficulty, question_type, count)
             response = self._call_openai_api(prompt)
             questions = self._parse_question_generation_response(response, question_type)
+            initial_count = len(questions)
 
-            # 若首次为空，进行更严格 JSON 输出与降载重试
-            if not questions:
+            # 若首次不足，进行更严格 JSON 输出与降载重试
+            if len(questions) < count:
                 strict_prompt = self._build_question_generation_prompt(subject, topic, difficulty, question_type, min(count, 2))
                 try:
                     response2 = self._call_openai_api(strict_prompt, force_json=True, max_tokens=800, temperature=0.2)
-                    questions = self._parse_question_generation_response(response2, question_type)
+                    questions.extend(self._parse_question_generation_response(response2, question_type))
                 except Exception:
-                    questions = []
+                    pass
 
-            # 再次为空，做最小单题重试
-            if not questions:
+            # 仍不足，做最小单题重试
+            if len(questions) < count:
                 min_prompt = self._build_question_generation_prompt(subject, topic, difficulty, question_type, 1)
                 try:
                     response3 = self._call_openai_api(min_prompt, force_json=True, max_tokens=600, temperature=0.2)
-                    questions = self._parse_question_generation_response(response3, question_type)
+                    questions.extend(self._parse_question_generation_response(response3, question_type))
                 except Exception:
-                    questions = []
+                    pass
 
-            return questions
+            normalized, normalize_stats = self._normalize_generated_questions_with_stats(
+                questions=questions,
+                question_type=question_type,
+                difficulty=difficulty,
+                expected_count=count
+            )
+
+            # 若仍不足，再做小批量补齐（最多两轮）
+            refill_rounds = 0
+            while len(normalized) < max(1, count) and refill_rounds < 2:
+                refill_rounds += 1
+                missing = max(1, min(3, count - len(normalized)))
+                refill_prompt = self._build_question_generation_prompt(subject, topic, difficulty, question_type, missing)
+                try:
+                    refill_resp = self._call_openai_api(refill_prompt, force_json=True, max_tokens=700, temperature=0.25)
+                    refill_questions = self._parse_question_generation_response(refill_resp, question_type)
+                    merged = normalized + refill_questions
+                    normalized, normalize_stats = self._normalize_generated_questions_with_stats(
+                        questions=merged,
+                        question_type=question_type,
+                        difficulty=difficulty,
+                        expected_count=count
+                    )
+                except Exception:
+                    break
+
+            self.last_generation_report = {
+                'requestedCount': int(count),
+                'initialParsedCount': int(initial_count),
+                'finalCount': len(normalized),
+                'refillRounds': refill_rounds,
+                'questionType': question_type,
+                'difficulty': difficulty,
+                **normalize_stats,
+            }
+
+            return normalized
             
         except Exception as e:
             print(f"AI生成题目失败: {str(e)}")
+            self.last_generation_report = {
+                'requestedCount': int(count or 0),
+                'initialParsedCount': 0,
+                'finalCount': 0,
+                'refillRounds': 0,
+                'error': str(e)
+            }
             return []
     
     def ai_analyze_wrong_answer(self, question_content: str, correct_answer: str, 
@@ -339,6 +392,8 @@ class AIUtils:
 - 只输出一个严格的 JSON 对象，不能包含任何解释性文字、Markdown、反引号或注释
 - JSON 使用双引号；不要包含多余字段；不要有尾随逗号
 - 当题型不是“选择题”时，必须完全省略 "options" 字段
+- 生成的每道题必须避免与其他题在题干、考查角度、答案表达上重复
+- 同一批题请覆盖不同小知识点，不要只围绕同一个例子改写
 
 必须返回的 JSON 结构：
 {{
@@ -379,10 +434,22 @@ class AIUtils:
                 'Authorization': f'Bearer {self.api_key}',
                 'Content-Type': 'application/json',
             }
-            
+
+            # 日志脱敏，避免泄露 Key 与题干内容
+            safe_headers = dict(headers)
+            safe_headers['Authorization'] = f"Bearer {self._mask_secret(self.api_key)}"
+            safe_payload = {
+                'model': payload.get('model'),
+                'temperature': payload.get('temperature'),
+                'max_tokens': payload.get('max_tokens'),
+                'force_json': force_json,
+                'messages_count': len(payload.get('messages', [])),
+                'prompt_length': len(prompt or '')
+            }
+
             print(f"智谱AI请求URL: {url}")
-            print(f"智谱AI请求Headers: {headers}")
-            print(f"智谱AI请求Payload: {payload}")
+            print(f"智谱AI请求Headers(脱敏): {safe_headers}")
+            print(f"智谱AI请求摘要: {safe_payload}")
 
             resp = requests.post(url, headers=headers, json=payload, timeout=60)
             print(f"智谱AI响应状态码: {resp.status_code}")
@@ -499,6 +566,197 @@ class AIUtils:
         except Exception as e:
             print(f"解析题目生成响应失败: {str(e)}")
             return []
+
+    def _normalize_generated_questions(
+        self,
+        questions: List[Dict[str, Any]],
+        question_type: int,
+        difficulty: str,
+        expected_count: int
+    ) -> List[Dict[str, Any]]:
+        """兼容旧调用，仅返回题目列表。"""
+        normalized, _ = self._normalize_generated_questions_with_stats(
+            questions=questions,
+            question_type=question_type,
+            difficulty=difficulty,
+            expected_count=expected_count
+        )
+        return normalized
+
+    def _normalize_generated_questions_with_stats(
+        self,
+        questions: List[Dict[str, Any]],
+        question_type: int,
+        difficulty: str,
+        expected_count: int
+    ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+        """对 AI 出题结果做归一化与去重，提升可入库成功率。"""
+        stats = {
+            'rawCount': len(questions) if isinstance(questions, list) else 0,
+            'droppedEmptyContent': 0,
+            'droppedDuplicate': 0,
+            'droppedSimilar': 0,
+            'droppedInvalidChoiceOptions': 0,
+            'droppedEmptyAnswer': 0,
+            'trimmedOverflow': 0,
+        }
+
+        if not isinstance(questions, list):
+            return [], stats
+
+        normalized: List[Dict[str, Any]] = []
+        seen_contents = set()
+        seen_content_texts: List[str] = []
+        target_count = max(1, min(int(expected_count or 1), 20))
+
+        for question in questions:
+            if not isinstance(question, dict):
+                continue
+
+            content = str(question.get('content', '')).strip()
+            if not content:
+                stats['droppedEmptyContent'] += 1
+                continue
+
+            dedup_key = re.sub(r'\s+', ' ', content).lower()
+            if dedup_key in seen_contents:
+                stats['droppedDuplicate'] += 1
+                continue
+            if self._is_similar_to_existing(content, seen_content_texts):
+                stats['droppedSimilar'] += 1
+                continue
+            seen_contents.add(dedup_key)
+            seen_content_texts.append(content)
+
+            item: Dict[str, Any] = {
+                'content': content,
+                'analysis': str(question.get('analysis', '')).strip(),
+                'difficulty': str(question.get('difficulty') or difficulty or 'medium').strip() or 'medium',
+                'knowledge_points': str(question.get('knowledge_points', '')).strip(),
+                'type': question_type,
+                'createTime': DateUtil.getNowDateTime()
+            }
+
+            if question_type == 0:
+                options_raw = question.get('options', [])
+                if not isinstance(options_raw, list):
+                    continue
+
+                options_clean: List[str] = []
+                option_seen = set()
+                for opt in options_raw:
+                    opt_text = str(opt).strip()
+                    if not opt_text:
+                        continue
+                    key = re.sub(r'\s+', ' ', opt_text).lower()
+                    if key in option_seen:
+                        continue
+                    option_seen.add(key)
+                    options_clean.append(opt_text)
+
+                if len(options_clean) < 2:
+                    stats['droppedInvalidChoiceOptions'] += 1
+                    continue
+
+                placeholder = ['选项A', '选项B', '选项C', '选项D']
+                for idx in range(len(options_clean), 4):
+                    options_clean.append(placeholder[idx])
+                options_clean = options_clean[:4]
+
+                answer = self._normalize_choice_answer(question.get('answer', ''), options_clean)
+                item['options'] = options_clean
+                item['answer'] = answer or 'A'
+            else:
+                answer_text = str(question.get('answer', '')).strip()
+                if not answer_text:
+                    stats['droppedEmptyAnswer'] += 1
+                    continue
+                item['answer'] = answer_text
+
+            normalized.append(item)
+            if len(normalized) >= target_count:
+                break
+
+        if len(normalized) > target_count:
+            stats['trimmedOverflow'] = len(normalized) - target_count
+            normalized = normalized[:target_count]
+
+        return normalized, stats
+
+    def _is_similar_to_existing(self, content: str, existing_contents: List[str]) -> bool:
+        """判断题干是否与已保留题目近似。"""
+        current = self._normalize_similarity_text(content)
+        if not current:
+            return False
+
+        for existing in existing_contents:
+            other = self._normalize_similarity_text(existing)
+            if not other:
+                continue
+
+            if current == other:
+                return True
+
+            # 包含关系通常表示仅改写前后缀，视为重复
+            if len(current) >= 12 and (current in other or other in current):
+                return True
+
+            ratio = difflib.SequenceMatcher(a=current, b=other).ratio()
+            if ratio >= self.similarity_threshold:
+                return True
+
+        return False
+
+    @staticmethod
+    def _normalize_similarity_text(text: str) -> str:
+        """用于相似度比较的题干归一化。"""
+        value = str(text or '').strip().lower()
+        if not value:
+            return ''
+        value = re.sub(r'```[\s\S]*?```', ' ', value)
+        value = re.sub(r'\$\$[\s\S]*?\$\$', ' ', value)
+        value = re.sub(r'[^\w\u4e00-\u9fff]+', '', value)
+        return value
+
+    @staticmethod
+    def _normalize_choice_answer(raw_answer: Any, options: List[str]) -> str:
+        """将选择题答案归一化为 A/B/C/D。"""
+        if not options:
+            return 'A'
+
+        answer_text = str(raw_answer or '').strip()
+        if not answer_text:
+            return 'A'
+
+        upper = answer_text.upper()
+        letters = ['A', 'B', 'C', 'D']
+        if upper in letters:
+            return upper
+
+        if upper.isdigit():
+            val = int(upper)
+            if 0 <= val <= 3:
+                return letters[val]
+            if 1 <= val <= 4:
+                return letters[val - 1]
+
+        letter_match = re.search(r'[ABCD]', upper)
+        if letter_match:
+            return letter_match.group(0)
+
+        for idx, opt in enumerate(options[:4]):
+            if answer_text == opt or upper == str(opt).strip().upper():
+                return letters[idx]
+
+        return 'A'
+
+    @staticmethod
+    def _mask_secret(secret: str) -> str:
+        """日志脱敏显示。"""
+        text = str(secret or '')
+        if len(text) <= 8:
+            return '***'
+        return f"{text[:4]}***{text[-4:]}"
     
     def _parse_json_response(self, response: str) -> Dict[str, Any]:
         """解析JSON响应（更健壮）：

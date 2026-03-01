@@ -213,6 +213,18 @@
           <i class="ivu-icon ivu-icon-ios-analytics"></i>
           <span>系统日志</span>
         </div>
+        <div class="action-item" @click="navigateTo('/dataDashboard')">
+          <i class="ivu-icon ivu-icon-ios-podium"></i>
+          <span>数据大屏</span>
+        </div>
+        <div class="action-item" @click="navigateTo('/classComparison')">
+          <i class="ivu-icon ivu-icon-ios-git-compare"></i>
+          <span>班级对比分析</span>
+        </div>
+        <div class="action-item" @click="navigateTo('/studentProgress')">
+          <i class="ivu-icon ivu-icon-ios-trending-up"></i>
+          <span>学生进步分析</span>
+        </div>
       </div>
     </div>
 
@@ -282,6 +294,10 @@ import * as echarts from 'echarts/core'
 import { LineChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
+import { createEmptyAdminDashboardData, createAdminDashboardChartInstances } from '@/utils/adminDashboardDefaults'
+import { buildAdminDashboardTrendsOption } from '@/utils/adminDashboardChartOptions'
+import { setChartInstance, disposeAllChartInstances } from '@/utils/chartInstanceManager'
+import { triggerBlobDownload } from '@/utils/fileDownload'
 
 echarts.use([LineChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer])
 
@@ -294,18 +310,8 @@ export default {
       examStatModal: false,
       examStatId: '',
       examStatResult: null,
-      dashboardData: {
-        overview: {},
-        monthly: {},
-        activity: {},
-        today: {},
-        trends_7d: {
-          days: [],
-          practices: [],
-          tasks: []
-        }
-      },
-      trendsChart: null,
+      dashboardData: createEmptyAdminDashboardData(),
+      chartInstances: createAdminDashboardChartInstances(),
       resizeHandler: null
     }
   },
@@ -341,13 +347,7 @@ export default {
           this.$Message.error(resp.msg || '下载模板失败')
           return
         }
-        const blob = new Blob([resp.data || resp], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = 'students_template.xlsx'
-        a.click()
-        URL.revokeObjectURL(url)
+        triggerBlobDownload(resp.data || resp, 'students_template.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
       } catch (e) {
         console.error('下载模板失败', e)
         this.$Message.error('下载模板失败')
@@ -356,13 +356,7 @@ export default {
     async exportStudents() {
       try {
         const resp = await exportAdminStudents()
-        const blob = new Blob([resp.data || resp], { type: 'text/csv;charset=utf-8;' })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = 'students.csv'
-        a.click()
-        URL.revokeObjectURL(url)
+        triggerBlobDownload(resp.data || resp, 'students.csv', 'text/csv;charset=utf-8;')
       } catch (e) {
         console.error('导出学生失败', e)
         this.$Message.error('导出学生失败')
@@ -371,13 +365,7 @@ export default {
     async exportTeachers() {
       try {
         const resp = await exportAdminTeachers()
-        const blob = new Blob([resp.data || resp], { type: 'text/csv;charset=utf-8;' })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = 'teachers.csv'
-        a.click()
-        URL.revokeObjectURL(url)
+        triggerBlobDownload(resp.data || resp, 'teachers.csv', 'text/csv;charset=utf-8;')
       } catch (e) {
         console.error('导出教师失败', e)
         this.$Message.error('导出教师失败')
@@ -411,13 +399,7 @@ export default {
       }
       try {
         const resp = await exportAdminExamResults(this.examStatId)
-        const blob = new Blob([resp.data || resp], { type: 'text/csv;charset=utf-8;' })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = `exam_${this.examStatId}_results.csv`
-        a.click()
-        URL.revokeObjectURL(url)
+        triggerBlobDownload(resp.data || resp, `exam_${this.examStatId}_results.csv`, 'text/csv;charset=utf-8;')
       } catch (e) {
         console.error('导出考试结果失败', e)
         this.$Message.error('导出考试结果失败')
@@ -444,10 +426,6 @@ export default {
     },
     initTrendsChart() {
       if (!this.$refs.trendsChart) return
-      
-      if (this.trendsChart) {
-        this.trendsChart.dispose()
-      }
 
       // 检查DOM元素是否存在
       if (!this.$refs.trendsChart) {
@@ -455,123 +433,43 @@ export default {
         return
       }
 
-      this.trendsChart = echarts.init(this.$refs.trendsChart)
-      
-      const option = {
-        tooltip: {
-          trigger: 'axis',
-          axisPointer: {
-            type: 'cross'
-          }
-        },
-        legend: {
-          data: ['完成练习数', '完成任务数'],
-          top: 10
-        },
-        grid: {
-          left: '3%',
-          right: '4%',
-          bottom: '3%',
-          top: '15%',
-          containLabel: true
-        },
-        xAxis: {
-          type: 'category',
-          boundaryGap: false,
-          data: this.dashboardData.trends_7d?.days || [],
-          axisLabel: {
-            color: '#666'
-          }
-        },
-        yAxis: {
-          type: 'value',
-          axisLabel: {
-            color: '#666'
-          },
-          splitLine: {
-            lineStyle: {
-              color: '#f0f0f0'
-            }
-          }
-        },
-        series: [
-          {
-            name: '完成练习数',
-            type: 'line',
-            data: this.dashboardData.trends_7d?.practices || [],
-            smooth: true,
-            lineStyle: {
-              width: 3,
-              color: '#2d8cf0'
-            },
-            itemStyle: {
-              color: '#2d8cf0'
-            },
-            areaStyle: {
-              color: {
-                type: 'linear',
-                x: 0,
-                y: 0,
-                x2: 0,
-                y2: 1,
-                colorStops: [
-                  { offset: 0, color: 'rgba(45, 140, 240, 0.3)' },
-                  { offset: 1, color: 'rgba(45, 140, 240, 0.05)' }
-                ]
-              }
-            }
-          },
-          {
-            name: '完成任务数',
-            type: 'line',
-            data: this.dashboardData.trends_7d?.tasks || [],
-            smooth: true,
-            lineStyle: {
-              width: 3,
-              color: '#19be6b'
-            },
-            itemStyle: {
-              color: '#19be6b'
-            },
-            areaStyle: {
-              color: {
-                type: 'linear',
-                x: 0,
-                y: 0,
-                x2: 0,
-                y2: 1,
-                colorStops: [
-                  { offset: 0, color: 'rgba(25, 190, 107, 0.3)' },
-                  { offset: 1, color: 'rgba(25, 190, 107, 0.05)' }
-                ]
-              }
-            }
-          }
-        ]
-      }
-      
-      this.trendsChart.setOption(option)
+      setChartInstance(
+        this.chartInstances,
+        'trendsChart',
+        this.$refs.trendsChart,
+        echarts,
+        buildAdminDashboardTrendsOption(this.dashboardData.trends_7d || {})
+      )
 
       // 响应式调整 - 保存处理器引用
       this.resizeHandler = () => {
-        if (this.trendsChart) {
-          this.trendsChart.resize()
+        if (this.chartInstances.trendsChart) {
+          this.chartInstances.trendsChart.resize()
         }
       }
       window.addEventListener('resize', this.resizeHandler)
     },
     navigateTo(path) {
-      this.$router.push(path)
+      const routeMap = {
+        '/admin/users': { name: 'adminUsers' },
+        '/admin/subjects': { name: 'adminSubjects' },
+        '/admin/exams': { name: 'adminExams' },
+        '/admin/questions': { name: 'adminQuestions' },
+        '/admin/tasks': { name: 'adminTasks' },
+        '/admin/messages': { name: 'adminMessages' },
+        '/admin/logs': { name: 'adminLogs' },
+        '/dataDashboard': { name: 'dataDashboard' },
+        '/classComparison': { name: 'classComparison' },
+        '/studentProgress': { name: 'studentProgress' }
+      }
+      this.$router.push(routeMap[path] || path)
     }
   },
   mounted() {
     this.loadDashboardData()
   },
   beforeUnmount() {
-    if (this.trendsChart) {
-      this.trendsChart.dispose()
-      this.trendsChart = null
-    }
+    disposeAllChartInstances(this.chartInstances)
     // 移除事件监听器
     if (this.resizeHandler) {
       window.removeEventListener('resize', this.resizeHandler)

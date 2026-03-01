@@ -108,7 +108,7 @@
             <div class="question-header">
               <div class="question-title">
                 <span class="question-type">{{ getQuestionTypeName(question.type) }}</span>
-                <span class="question-text">{{ question.title }}</span>
+                <span class="question-text"><QuestionContentRenderer :content="question.title" compact /></span>
               </div>
               <div class="question-actions">
                 <Button
@@ -166,7 +166,7 @@
     >
       <div v-if="currentQuestion" class="review-content">
         <div class="question-display">
-          <h3>{{ currentQuestion.title }}</h3>
+            <h3><QuestionContentRenderer :content="currentQuestion.title" /></h3>
           <div class="question-type-tag">
             <Tag>{{ getQuestionTypeName(currentQuestion.type) }}</Tag>
           </div>
@@ -216,10 +216,10 @@
         <div class="answer-analysis">
           <Divider>参考答案</Divider>
           <div class="correct-answer">
-            <strong>正确答案：</strong>{{ currentQuestion.correctAnswer }}
+            <strong>正确答案：</strong><QuestionContentRenderer :content="currentQuestion.correctAnswer" compact />
           </div>
           <div class="analysis">
-            <strong>题目分析：</strong>{{ currentQuestion.analysis }}
+            <strong>题目分析：</strong><QuestionContentRenderer :content="currentQuestion.analysis" compact />
           </div>
         </div>
         
@@ -254,7 +254,7 @@
     >
       <div v-if="currentQuestion" class="detail-content">
         <div class="question-detail">
-          <h3>{{ currentQuestion.title }}</h3>
+          <h3><QuestionContentRenderer :content="currentQuestion.title" /></h3>
           <div class="detail-info">
             <Tag>{{ getQuestionTypeName(currentQuestion.type) }}</Tag>
             <Tag color="green">{{ currentQuestion.project }}</Tag>
@@ -264,17 +264,17 @@
           <div class="answer-details">
             <div class="answer-item">
               <strong>你的答案：</strong>
-              <span class="wrong-answer">{{ currentQuestion.wrongAnswer }}</span>
+              <span class="wrong-answer"><QuestionContentRenderer :content="currentQuestion.wrongAnswer" compact /></span>
             </div>
             <div class="answer-item">
               <strong>正确答案：</strong>
-              <span class="correct-answer">{{ currentQuestion.correctAnswer }}</span>
+              <span class="correct-answer"><QuestionContentRenderer :content="currentQuestion.correctAnswer" compact /></span>
             </div>
           </div>
           
           <div class="analysis-detail">
             <strong>题目分析：</strong>
-            <p>{{ currentQuestion.analysis }}</p>
+            <QuestionContentRenderer :content="currentQuestion.analysis" compact />
           </div>
 
           <div class="analysis-detail">
@@ -330,9 +330,14 @@ import {
   deleteWrongQuestion,
   exportWrongQuestions
 } from '@/api/index.js'
+import QuestionContentRenderer from '@/components/QuestionContentRenderer.vue'
+import { triggerBlobDownload } from '@/utils/fileDownload'
 
 export default {
   name: 'WrongQuestions',
+  components: {
+    QuestionContentRenderer
+  },
   data() {
     return {
       loading: false,
@@ -658,15 +663,11 @@ export default {
           search: this.searchKeyword
         }
         const response = await exportWrongQuestions(filters)
-        const blob = new Blob([response], { type: 'text/csv;charset=utf-8;' })
-        const link = document.createElement('a')
-        const url = URL.createObjectURL(blob)
-        link.setAttribute('href', url)
-        link.setAttribute('download', `错题本_${new Date().toISOString().slice(0,10)}.csv`)
-        link.style.visibility = 'hidden'
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
+        triggerBlobDownload(
+          response,
+          `错题本_${new Date().toISOString().slice(0,10)}.csv`,
+          'text/csv;charset=utf-8;'
+        )
         this.$Message.success('导出成功')
       } catch (error) {
         console.error('导出失败:', error)
@@ -716,13 +717,13 @@ export default {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 24px;
-  color: #fff;
+  color: #000;
   box-shadow: 0 10px 30px rgba(24, 144, 255, 0.3);
 }
 
 .page-header h2 {
   margin: 0;
-  color: #fff;
+  color: #000;
   font-size: 28px;
   font-weight: 600;
 }
@@ -735,7 +736,7 @@ export default {
 .header-actions .ivu-btn-primary {
   background: rgba(255, 255, 255, 0.2);
   border: 1px solid rgba(255, 255, 255, 0.3);
-  color: #fff;
+  color: #000;
   border-radius: 8px;
   transition: all 0.3s ease;
 }
@@ -871,7 +872,7 @@ export default {
 
 .question-type {
   background: linear-gradient(135deg, #1890ff 0%, #0050b3 100%);
-  color: white;
+  color: #000;
   padding: 4px 12px;
   border-radius: 6px;
   font-size: 12px;
@@ -936,7 +937,7 @@ export default {
 
 .pagination-container .ivu-page-item:hover {
   background: #1890ff;
-  color: #fff;
+  color: #000;
 }
 
 .pagination-container .ivu-page-item-active {
@@ -972,7 +973,7 @@ export default {
 .question-type-tag .ivu-tag {
   background: linear-gradient(135deg, #1890ff 0%, #0050b3 100%);
   border: none;
-  color: #fff;
+  color: #000;
   padding: 4px 12px;
   border-radius: 6px;
 }

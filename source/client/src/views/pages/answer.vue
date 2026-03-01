@@ -2,14 +2,14 @@
     <div class="fater-answer-panle">
         <!-- 顶部工具栏 -->
         <div class="fater-answer-toolbar">
-            <Button type="error" ghost @click="confirmExit" icon="ios-close-circle">
-                退出考试
+            <Button type="error" ghost @click="confirmExit" icon="ios-close-circle" class="toolbar-btn-black">
+                {{ isTaskMode ? '退出任务' : '退出考试' }}
             </Button>
             <div class="toolbar-info">
                 <span class="exam-name">{{ examInfo.name }}</span>
                 <span class="exam-time">{{ examInfo.examTime }}</span>
             </div>
-            <Button type="primary" ghost @click="showHelpModal = true" icon="ios-help-circle-outline">
+            <Button type="primary" ghost @click="showHelpModal = true" icon="ios-help-circle-outline" class="toolbar-btn-black">
                 帮助
             </Button>
         </div>
@@ -42,7 +42,7 @@
                     <ul>
                         <li>注意考试倒计时，合理安排时间</li>
                         <li>时间结束前 5 分钟会收到提醒</li>
-                        <li>可以随时退出，答案会自动保存</li>
+                        <li>退出考试将自动交卷</li>
                     </ul>
                 </div>
                 <div class="help-section">
@@ -115,7 +115,7 @@
                 </Row>
             </div>
             <div class="fater-answer-flag">
-                仔细阅读，认真答题，遵守考试纪律
+                {{ isTaskMode ? '请在截止时间前认真完成任务' : '仔细阅读，认真答题，遵守考试纪律' }}
             </div>
         </div>
         <div class="fater-answer-right">
@@ -143,7 +143,8 @@
             </div>
             <div class="fater-answer-body">
                 <div class="fater-answer-practise" v-if="practise && practise.id">
-                    {{ practise.no }}. {{ practise.name }}
+                    <span>{{ practise.no }}.</span>
+                    <QuestionContentRenderer :content="practise.name" />
                 </div>
                 <div class="fater-answer-input">
                     <RadioGroup v-if="practise.type==0" v-model="practise.answer" vertical>
@@ -170,11 +171,10 @@
             </div>
             <div class="fater-answer-foot">
                 <div class="fater-answer-foot-desc">
-                    本次针对{{ examInfo.gradeName }}{{ examInfo.projectName }}考试, 其中选择题10道(每道2分), 填空题10道(每道2分),
-                    判断题10道(每道2分), 编程题2道(每道20分), 考试时间120分钟, 满分100分
+                    {{ footerDescription }}
                 </div>
                 <div class="fater-answer-foot-subbtn">
-                    <Button @click="subAnswers()" type="primary">交卷</Button>
+                    <Button @click="subAnswers()" type="primary" :loading="isSubmitting" :disabled="isSubmitting">{{ isTaskMode ? '提交任务' : '交卷' }}</Button>
                 </div>
             </div>
         </div>
@@ -219,6 +219,18 @@
     z-index: 1000;
 }
 
+.toolbar-btn-black {
+    color: #000 !important;
+    border-color: #000 !important;
+}
+
+.toolbar-btn-black:hover,
+.toolbar-btn-black:focus,
+.toolbar-btn-black:active {
+    color: #000 !important;
+    border-color: #000 !important;
+}
+
 .toolbar-info {
     display: flex;
     align-items: center;
@@ -228,12 +240,12 @@
 .exam-name {
     font-size: 16px;
     font-weight: 600;
-    color: #fff;
+    color: #000;
 }
 
 .exam-time {
     font-size: 14px;
-    color: rgba(255, 255, 255, 0.9);
+    color: #000;
 }
 
 /* 答题进度样式 */
@@ -275,10 +287,20 @@
 }
 
 /* 题目按钮状态 */
+.question-btn {
+    color: #000 !important;
+}
+
+.question-btn:hover,
+.question-btn:focus,
+.question-btn:active {
+    color: #000 !important;
+}
+
 .question-btn.answered {
     background: linear-gradient(135deg, #52c41a 0%, #389e0d 100%);
     border-color: #52c41a;
-    color: #fff;
+    color: #000 !important;
     box-shadow: 0 2px 8px rgba(82, 196, 26, 0.3);
     transition: all 0.3s ease;
 }
@@ -292,13 +314,20 @@
     box-shadow: 0 0 0 3px rgba(24, 144, 255, 0.3);
     border-color: #1890ff;
     background: linear-gradient(135deg, #1890ff 0%, #0050b3 100%);
-    color: #fff;
+    color: #000 !important;
     transform: scale(1.05);
 }
 
 .question-btn.answered.current {
     box-shadow: 0 0 0 3px rgba(82, 196, 26, 0.3);
     transform: scale(1.05);
+}
+
+.fater-answer-panle .ivu-btn-primary,
+.fater-answer-panle .ivu-btn-primary:hover,
+.fater-answer-panle .ivu-btn-primary:focus,
+.fater-answer-panle .ivu-btn-primary:active {
+    color: #000 !important;
 }
 
 /* 帮助模态框样式 */
@@ -433,7 +462,11 @@ import {
     addAnswerLog,
     getPracticePaperQuestions,
     getPracticePaperInfo,
-    submitPractice
+    submitPractice,
+    getTaskQuestions,
+    saveTaskProgress,
+    submitTask,
+    getStudentTasks
 } from '../../api/index.js';
 import {
     countDown,
@@ -441,7 +474,11 @@ import {
     contrastCountDown,
     formatDate
 } from '../../utils/date.js';
+import QuestionContentRenderer from '@/components/QuestionContentRenderer.vue';
 export default{
+    components: {
+        QuestionContentRenderer
+    },
     data(){
         return {
             userInfo: {},
@@ -450,6 +487,8 @@ export default{
             p_list_2: [],
             p_list_3: [],
             examInfo: {},
+            currentTaskInfo: null,
+            practiceLogId: null,  // 练习模式的logId
             countDown: {
                 text: "",
                 startTime: "",
@@ -464,10 +503,23 @@ export default{
                 options: [],
             },
             showHelpModal: false,
-            timer: null  // 定时器引用，用于清��
+            timer: null,
+            isExitingAndSubmitting: false,
+            isSubmitting: false
         }
     },
     computed: {
+        isTaskMode() {
+            return this.$route.query.type === 'task';
+        },
+        footerDescription() {
+            if (this.isTaskMode) {
+                const deadline = this.currentTaskInfo && this.currentTaskInfo.deadline ? this.currentTaskInfo.deadline : '未设置';
+                const score = this.currentTaskInfo && this.currentTaskInfo.score != null ? this.currentTaskInfo.score : '—';
+                return `本次为任务作答，请在截止时间前提交。截止时间：${deadline}，任务分值：${score}分。`;
+            }
+            return `本次针对${this.examInfo.gradeName || ''}${this.examInfo.projectName || ''}考试, 其中选择题10道(每道2分), 填空题10道(每道2分), 判断题10道(每道2分), 编程题2道(每道20分), 考试时间120分钟, 满分100分`;
+        },
         // 已完成题目数量
         completedCount() {
             let count = 0;
@@ -538,8 +590,22 @@ export default{
             return resl;
         },
         // 提取实际提交逻辑为独立方法（带重试机制）
-        async doSubmit(retryCount = 0){
+        async doSubmit(retryCount = 0, options = {}){
             const MAX_RETRY = 2
+            const isPractice = this.$route.query.type === 'practice'
+            const isTask = this.$route.query.type === 'task'
+            const redirectToWelcome = !!options.redirectToWelcome
+
+            if (retryCount === 0) {
+                if (this.isSubmitting) {
+                    return
+                }
+                this.isSubmitting = true
+            }
+
+            // 提交前先把当前题答案同步到列表与本地缓存
+            this.persistCurrentAnswer()
+
             let answers=[], nos=[], practiseIds=[];
             this.p_list_0.forEach(item =>{
                 answers.push(item.answer);
@@ -562,35 +628,99 @@ export default{
                 practiseIds.push(item.id);
             });
 
-            // 本地保存答案作为备份
-            const storageKey = `exam_${this.$route.query.id}_backup`
+            // 本地保存答案作为备份（兼容考试模式和练习模式）
+            const storageKey = `exam_${this.$route.query.paperId || this.$route.query.id}_backup`
             sessionStorage.setItem(storageKey, JSON.stringify({ answers, nos, practiseIds }))
 
             try {
-                const resp = await addAnswerLog({
-                    token: this.$store.state.token || sessionStorage.getItem('token'),
-                    examId: this.$route.query.id,
-                    answers: answers,
-                    nos: nos,
-                    practiseIds: practiseIds
-                })
+                if (isTask) {
+                    const logId = this.$route.query.logId
+                    const taskId = this.$route.query.taskId
+                    if (!logId || !taskId) {
+                        this.$Message.error('任务记录参数缺失，无法提交')
+                        return
+                    }
 
-                this.$Notice.success({
-                    title: '交卷成功',
-                    desc: '试卷已提交，请耐心等待教师审核结果'
-                });
-                this.$router.push('/welcome');
-
-                // 清除备份
-                sessionStorage.removeItem(storageKey)
+                    await saveTaskProgress(logId, practiseIds, answers)
+                    const resp = await submitTask(logId)
+                    if (resp.code === 0) {
+                        this.$Notice.success({
+                            title: '任务完成',
+                            desc: `得分：${resp.data.score}分，正确率：${resp.data.accuracy}%`
+                        })
+                        sessionStorage.removeItem(storageKey)
+                        this.$router.push({
+                            name: 'taskResult',
+                            query: { taskId: taskId, logId: logId }
+                        })
+                    } else {
+                        throw { msg: resp.msg || '任务提交失败' }
+                    }
+                } else if (isPractice) {
+                    // 练习模式：调用 submitPractice
+                    const logId = this.practiceLogId || this.$route.query.logId
+                    if (!logId) {
+                        this.$Message.error('练习记录ID缺失，无法提交')
+                        return
+                    }
+                    const resp = await submitPractice(logId)
+                    if (resp.code === 0) {
+                        this.$Notice.success({
+                            title: '练习完成',
+                            desc: `得分：${resp.data.score}分，正确率：${resp.data.accuracy}%`
+                        });
+                        sessionStorage.removeItem(storageKey)
+                        this.$router.push({
+                            name: 'practiceResult',
+                            query: { paperId: this.$route.query.paperId, logId: logId }
+                        });
+                    } else {
+                        throw { msg: resp.msg || '提交失败' }
+                    }
+                } else {
+                    // 考试模式：调用 addAnswerLog
+                    const examId = this.$route.query.id
+                    const token = this.$store.state.token || sessionStorage.getItem('token')
+                    if (!examId || !token) {
+                        throw { msg: '考试参数或登录状态缺失，请刷新后重试' }
+                    }
+                    const resp = await addAnswerLog({
+                        token: this.$store.state.token || sessionStorage.getItem('token'),
+                        examId: examId,
+                        answers: answers,
+                        nos: nos,
+                        practiseIds: practiseIds
+                    })
+                    if (!resp || resp.code !== 0) {
+                        throw { msg: (resp && resp.msg) ? resp.msg : '交卷失败' }
+                    }
+                    const pendingManual = Number(resp?.data?.pendingManual || 0)
+                    const descText = pendingManual > 0
+                        ? `试卷已提交成功，其中 ${pendingManual} 道主观题待教师审核。`
+                        : '试卷已提交，请耐心等待教师审核结果'
+                    this.$Notice.success({
+                        title: '交卷成功',
+                        desc: descText
+                    });
+                    sessionStorage.removeItem(storageKey)
+                    if (redirectToWelcome) {
+                        window.location.assign('/#/welcome')
+                    } else {
+                        this.$router.push('/welcome');
+                    }
+                }
             } catch (err) {
                 const msg = (err && err.msg) ? err.msg : '提交失败'
+                const status = err && err.response ? err.response.status : null
+                const isServerError = !!(status && status >= 500)
+                const isTimeout = !!(err && (err.code === 'ECONNABORTED' || /timeout|超时/i.test(String(err.message || ''))))
+                const isNetworkError = !!(err && (!err.response && (err.message === 'Network Error' || /网络|connection|connect/i.test(String(err.message || '')))))
 
                 // 网络错误，尝试重试
-                if (retryCount < MAX_RETRY && (!err.response || err.response.status >= 500)) {
+                if (retryCount < MAX_RETRY && (isServerError || isTimeout || isNetworkError)) {
                     this.$Message.warning(`提交失败，正在重试 (${retryCount + 1}/${MAX_RETRY})...`)
                     setTimeout(() => {
-                        this.doSubmit(retryCount + 1)
+                        this.doSubmit(retryCount + 1, options)
                     }, 2000)
                     return
                 }
@@ -603,21 +733,32 @@ export default{
                 })
 
                 // 保存到本地存储以便恢复
-                sessionStorage.setItem(`exam_${this.$route.query.id}_draft`, JSON.stringify({ answers, nos, practiseIds }))
+                sessionStorage.setItem(`exam_${this.$route.query.paperId || this.$route.query.id}_draft`, JSON.stringify({ answers, nos, practiseIds }))
+            } finally {
+                if (retryCount === 0) {
+                    this.isSubmitting = false
+                }
             }
         },
         subAnswers(){
+            if (this.isSubmitting) {
+                this.$Message.info('正在提交，请勿重复操作')
+                return
+            }
             let answersIsNull = this.getAnswerIsNull();
             const totalCount = this.p_list_0.length + this.p_list_1.length + this.p_list_2.length + this.p_list_3.length;
             const answeredCount = totalCount - answersIsNull.length;
+            const submitTitle = this.isTaskMode ? '提交任务' : '确认交卷';
+            const submitText = this.isTaskMode ? '提交任务' : '确认交卷';
+            const forceText = this.isTaskMode ? '强制提交任务' : '强制交卷';
 
             // 无论是否完成，都显示确认对话框
             if(answersIsNull.length > 0){
                 // 有未完成题目
                 this.$Modal.confirm({
-                    title: '还有题目未完成',
-                    content: `您已完成 ${answeredCount} 题，还有 ${answersIsNull.length} 题未完成（第 ${answersIsNull.join('、')} 题）。确定要交卷吗？`,
-                    okText: '强制交卷',
+                    title: this.isTaskMode ? '还有题目未完成' : '还有题目未完成',
+                    content: `您已完成 ${answeredCount} 题，还有 ${answersIsNull.length} 题未完成（第 ${answersIsNull.join('、')} 题）。确定要${this.isTaskMode ? '提交任务' : '交卷'}吗？`,
+                    okText: forceText,
                     cancelText: '继续答题',
                     onOk: () => {
                         this.doSubmit();
@@ -626,9 +767,9 @@ export default{
             } else {
                 // 全部完成
                 this.$Modal.confirm({
-                    title: '确认交卷？',
-                    content: `您已完成全部 ${answeredCount} 道题目，交卷后将无法修改答案。确定要提交吗？`,
-                    okText: '确认交卷',
+                    title: submitTitle,
+                    content: `您已完成全部 ${answeredCount} 道题目，${this.isTaskMode ? '提交后' : '交卷后'}将无法修改答案。确定要提交吗？`,
+                    okText: submitText,
                     cancelText: '再检查一下',
                     onOk: () => {
                         this.doSubmit();
@@ -637,12 +778,15 @@ export default{
             }
         },
         getItem(id, no){
+            // 切题前先保存当前题答案，避免答案丢失
+            this.persistCurrentAnswer()
 
             getPractiseInfo(id).then(resp =>{
 
+                // 使用 find(id) 精确查找，兼容考试模式（no连续）和练习模式（no按类型重置）
                 if(resp.data.type == 0){
 
-                    let temp = this.p_list_0[no-1];
+                    let temp = this.p_list_0.find(item => item.id === id);
                     // 使用 Object.assign 保持对象引用，只更新属性
                     Object.assign(this.practise, {
                         token: this.$store.state.token || sessionStorage.getItem('token'),
@@ -650,13 +794,13 @@ export default{
                         no: no,
                         id: resp.data.id,
                         name: resp.data.name,
-                        answer: temp.answer ? temp.answer : null,
+                        answer: temp ? (temp.answer ? temp.answer : null) : null,
                         type: resp.data.type,
                         options: resp.data.options,
                     });
                 }else if(resp.data.type == 1){
 
-                    let temp = this.p_list_1[no-1-10];
+                    let temp = this.p_list_1.find(item => item.id === id);
                     // 使用 Object.assign 保持对象引用，只更新属性
                     Object.assign(this.practise, {
                         token: this.$store.state.token || sessionStorage.getItem('token'),
@@ -664,13 +808,13 @@ export default{
                         no: no,
                         id: resp.data.id,
                         name: resp.data.name,
-                        answer: temp.answer ? temp.answer : null,
+                        answer: temp ? (temp.answer ? temp.answer : null) : null,
                         type: resp.data.type,
                         options: [],  // 清空选项
                     });
                 }else if(resp.data.type == 2){
 
-                    let temp = this.p_list_2[no-1-20];
+                    let temp = this.p_list_2.find(item => item.id === id);
                     // 使用 Object.assign 保持对象引用，只更新属性
                     Object.assign(this.practise, {
                         token: this.$store.state.token || sessionStorage.getItem('token'),
@@ -678,13 +822,13 @@ export default{
                         no: no,
                         id: resp.data.id,
                         name: resp.data.name,
-                        answer: temp.answer ? temp.answer : null,
+                        answer: temp ? (temp.answer ? temp.answer : null) : null,
                         type: resp.data.type,
                         options: [],  // 清空选项
                     });
                 }else if(resp.data.type == 3){
 
-                    let temp = this.p_list_3[no-1-30];
+                    let temp = this.p_list_3.find(item => item.id === id);
                     // 使用 Object.assign 保持对象引用，只更新属性
                     Object.assign(this.practise, {
                         token: this.$store.state.token || sessionStorage.getItem('token'),
@@ -692,7 +836,7 @@ export default{
                         no: no,
                         id: resp.data.id,
                         name: resp.data.name,
-                        answer: temp.answer ? temp.answer : null,
+                        answer: temp ? (temp.answer ? temp.answer : null) : null,
                         type: resp.data.type,
                         options: [],  // 清空选项
                     });
@@ -740,14 +884,38 @@ export default{
         saveAnswer(practise) {
             if (!practise || !practise.id) return;
 
-            const storageKey = `exam_${this.$route.query.id}_answers`;
+            const storageKey = `exam_${this.$route.query.paperId || this.$route.query.id}_answers`;
             const answers = JSON.parse(sessionStorage.getItem(storageKey) || '{}');
             answers[practise.id] = practise.answer;
             sessionStorage.setItem(storageKey, JSON.stringify(answers));
         },
+        // 将当前题答案同步到题目列表 + 本地缓存（练习模式顺带远程保存）
+        persistCurrentAnswer() {
+            if (!this.practise || !this.practise.id) return
+
+            const answerValue = this.practise.answer == null ? '' : this.practise.answer
+            const lists = [this.p_list_0, this.p_list_1, this.p_list_2, this.p_list_3]
+            for (const list of lists) {
+                const item = list.find(i => i.id === this.practise.id)
+                if (item) {
+                    item.answer = answerValue
+                    break
+                }
+            }
+
+            this.saveAnswer({ id: this.practise.id, answer: answerValue })
+
+            // 练习模式：切题时自动落库，避免意外退出后答案丢失
+            if (this.$route.query.type === 'practice') {
+                const logId = this.practiceLogId || this.$route.query.logId
+                if (logId) {
+                    savePracticeProgress(logId, this.practise.id, answerValue).catch(() => {})
+                }
+            }
+        },
         // 从 sessionStorage 恢复答案
         restoreAnswers() {
-            const storageKey = `exam_${this.$route.query.id}_answers`;
+            const storageKey = `exam_${this.$route.query.paperId || this.$route.query.id}_answers`;
             const savedAnswers = JSON.parse(sessionStorage.getItem(storageKey) || '{}');
 
             // 恢复选择题答案
@@ -780,18 +948,80 @@ export default{
         },
         // 确认退出考试
         confirmExit() {
+            if (this.isSubmitting) {
+                this.$Message.info('正在提交，请稍候')
+                return
+            }
             const answeredCount = this.completedCount;
             const totalCount = this.totalCount;
+            const confirmed = window.confirm(`确认退出${this.isTaskMode ? '任务' : '考试'}？\n您已完成 ${answeredCount}/${totalCount} 题。退出后将自动提交并返回系统首页。`)
+            if (!confirmed) {
+                return
+            }
 
-            this.$Modal.confirm({
-                title: '确认退出考试？',
-                content: `您已完成 ${answeredCount}/${totalCount} 题。退出后答题进度将被保存，可以重新进入继续答题。确定要退出吗？`,
-                okText: '确认退出',
-                cancelText: '继续答题',
-                onOk: () => {
-                    this.$router.push('/exams');
+            if (this.isExitingAndSubmitting) {
+                return
+            }
+            this.isExitingAndSubmitting = true
+
+            if (this.isTaskMode) {
+                this.doSubmit(0).finally(() => {
+                    this.isExitingAndSubmitting = false
+                })
+                return
+            }
+
+            this.doSubmit(0, { redirectToWelcome: true }).finally(() => {
+                this.isExitingAndSubmitting = false
+            })
+        },
+        // 启动定时器
+        startTimer() {
+            let warning5min = false;
+            let warning1min = false;
+
+            this.timer = setInterval(() =>{
+
+                let temp = countDown(this.countDown.startTime, this.countDown.endTime);
+                const totalSeconds = temp.h * 3600 + temp.m * 60 + temp.s;
+
+                if (totalSeconds === 300 && !warning5min) {
+                    this.$Notice.warning({
+                        title: '考试提醒',
+                        desc: '距离考试结束还有 5 分钟，请抓紧时间！',
+                        duration: 0
+                    });
+                    warning5min = true;
                 }
-            });
+
+                if (totalSeconds === 60 && !warning1min) {
+                    this.$Notice.warning({
+                        title: '考试提醒',
+                        desc: '距离考试结束还有 1 分钟！请尽快完成答题！',
+                        duration: 0
+                    });
+                    warning1min = true;
+                }
+
+                if(contrastCountDown(temp.h, temp.m, temp.s)){
+
+                    this.$Modal.warning({
+                        title: '考试时间已到',
+                        content: '考试时间已到，系统将自动提交您的试卷',
+                        onOk: () => {
+                            this.doSubmit();
+                            if (this.timer) {
+                                clearInterval(this.timer);
+                                this.timer = null;
+                            }
+                        },
+                    });
+                }else{
+
+                    this.countDown.text = formatCountDown(temp.h, temp.m, temp.s);
+                    this.countDown.startTime = formatDate(new Date());
+                }
+            }, 1000);
         },
         // 获取所有题目列表（合并）
         getAllQuestions() {
@@ -873,37 +1103,128 @@ export default{
         },
         // 返回上一页
         goBack() {
-            this.$router.push('/exams');
+            if (this.$route.query.type === 'task') {
+                this.confirmExit();
+                return;
+            }
+            this.confirmExit();
+        },
+
+        async validateTaskEntry(taskId) {
+            try {
+                const token = this.$store.state.token || sessionStorage.getItem('token')
+                const resp = await getStudentTasks(token)
+                if (resp.code !== 0 || !Array.isArray(resp.data)) {
+                    return true
+                }
+                const task = resp.data.find(item => String(item.id) === String(taskId))
+                if (!task || !task.deadline) {
+                    this.currentTaskInfo = task || null
+                    return true
+                }
+                this.currentTaskInfo = task
+                const deadline = new Date(task.deadline)
+                if (Number.isNaN(deadline.getTime())) {
+                    return true
+                }
+                if (new Date() > deadline && task.status !== 'completed') {
+                    this.$Message.warning('任务已截止，不能继续作答')
+                    this.$router.push('/home/taskCenter')
+                    return false
+                }
+                return true
+            } catch (error) {
+                console.error('校验任务状态失败:', error)
+                return true
+            }
+        },
+
+        async loadTask(taskId) {
+            try {
+                if (this.currentTaskInfo && this.currentTaskInfo.deadline) {
+                    this.countDown.startTime = formatDate(new Date())
+                    this.countDown.endTime = this.currentTaskInfo.deadline
+                } else {
+                    this.initCountDown()
+                }
+                const questionsResp = await getTaskQuestions(taskId)
+                if (questionsResp.code !== 0) {
+                    this.$Message.error(questionsResp.msg || '加载任务题目失败')
+                    return
+                }
+
+                const questions = questionsResp.data || []
+                this.examInfo = {
+                    name: this.currentTaskInfo && this.currentTaskInfo.title ? this.currentTaskInfo.title : '任务作答',
+                    examTime: this.currentTaskInfo && this.currentTaskInfo.deadline ? `截止：${this.currentTaskInfo.deadline}` : '请在截止时间前完成'
+                }
+
+                questions.forEach((q) => {
+                    const type = parseInt(q.type)
+                    const questionData = {
+                        id: q.id,
+                        answer: '',
+                        type: type
+                    }
+                    if (type === 0) {
+                        this.p_list_0.push({ ...questionData, no: this.p_list_0.length + 1 })
+                    } else if (type === 1) {
+                        this.p_list_1.push({ ...questionData, no: this.p_list_1.length + 1 })
+                    } else if (type === 2) {
+                        this.p_list_2.push({ ...questionData, no: this.p_list_2.length + 1 })
+                    } else if (type === 3) {
+                        this.p_list_3.push({ ...questionData, no: this.p_list_3.length + 1 })
+                    }
+                })
+
+                if (questions.length > 0) {
+                    const firstQuestion = questions[0]
+                    const firstNo = 1
+                    const firstResp = await getPractiseInfo(firstQuestion.id)
+                    Object.assign(this.practise, {
+                        token: this.$store.state.token || sessionStorage.getItem('token'),
+                        examId: taskId,
+                        no: firstNo,
+                        id: firstResp.data.id,
+                        name: firstResp.data.name,
+                        answer: null,
+                        type: firstResp.data.type,
+                        options: firstResp.data.options || [],
+                    })
+                } else {
+                    this.$Message.warning('该任务暂无题目')
+                }
+            } catch (error) {
+                console.error('加载任务失败:', error)
+                this.$Message.error('加载任务失败，请稍后重试')
+            }
+        },
+
+        loadPracticePaper(paperId) {
+            if (this.$options.watch && typeof this.$options.watch.loadPracticePaper === 'function') {
+                return this.$options.watch.loadPracticePaper.call(this, paperId)
+            }
+        },
+
+        loadExam(examId) {
+            if (this.$options.watch && typeof this.$options.watch.loadExam === 'function') {
+                return this.$options.watch.loadExam.call(this, examId)
+            }
         }
     },
     watch: {
-
-        practise(newVal, oldVal){
-
-            // 保存旧题目的答案
-            if (oldVal && oldVal.id) {
-                this.saveAnswer(oldVal);
-            }
-
-            // 更新列表中的答案
-            if(oldVal && oldVal.type == 0){
-
-                (this.p_list_0[oldVal.no-1])['answer'] = oldVal['answer'] ? oldVal['answer'] : null;
-            }else if(oldVal && oldVal.type == 1){
-
-                (this.p_list_1[oldVal.no-1-10])['answer'] = oldVal['answer'] ? oldVal['answer'] : null;
-            }else if(oldVal && oldVal.type == 2){
-
-                (this.p_list_2[oldVal.no-1-20])['answer'] = oldVal['answer'] ? oldVal['answer'] : null;
-            }else if(oldVal && oldVal.type == 3){
-
-                (this.p_list_3[oldVal.no-1-30])['answer'] = oldVal['answer'] ? oldVal['answer'] : null;
-            }
+        'practise.answer': function() {
+            this.persistCurrentAnswer()
         },
 
         // 加载练习试卷
         loadPracticePaper(paperId) {
-            getPracticePaperInfo(paperId).then(resp => {
+            // 若 logId 已由路由传入（resume/continue 场景），直接使用；否则调用 startPractice 创建记录
+            const existingLogId = this.practiceLogId
+            const token = this.$store.state.token || sessionStorage.getItem('token')
+
+            const doLoad = () => {
+                getPracticePaperInfo(paperId).then(resp => {
                 this.examInfo = {
                     name: resp.data.title,
                     examTime: resp.data.duration + '分钟',
@@ -970,6 +1291,25 @@ export default{
             }).catch((err) => {
                 this.$Message.error((err && err.msg) ? err.msg : '无法获取练习试卷信息');
             });
+            }  // end doLoad
+
+            if (existingLogId) {
+                // 已有 logId（续做/重做场景），直接加载
+                doLoad()
+            } else {
+                // 首次开始，调用 startPractice 获取 logId
+                import('../../api/index.js').then(api => {
+                    api.startPractice(token, paperId).then(startResp => {
+                        if (startResp.code === 0) {
+                            this.practiceLogId = startResp.data.logId
+                        }
+                        doLoad()
+                    }).catch(() => {
+                        // startPractice 失败不阻断，仍然显示题目；提交时再报错
+                        doLoad()
+                    })
+                })
+            }
         },
 
         // 加载考试
@@ -1078,11 +1418,19 @@ export default{
     mounted(){
         // 判断是练习模式还是考试模式
         const isPractice = this.$route.query.type === 'practice';
+        const isTask = this.$route.query.type === 'task';
         const paperId = this.$route.query.paperId;
         const examId = this.$route.query.id;
+        const taskId = this.$route.query.taskId;
 
         // 验证ID参���
-        if (isPractice) {
+        if (isTask) {
+            if (!taskId || !this.$route.query.logId) {
+                this.$Message.error('任务参数不完整，无法作答')
+                this.$router.push('/home/taskCenter')
+                return
+            }
+        } else if (isPractice) {
             if (!paperId) {
                 this.$Message.error('练习试卷ID不能为空')
                 this.$router.push('/home/practises')
@@ -1104,8 +1452,17 @@ export default{
             // 不影响考试流程，静默处理
         });
 
-        if (isPractice) {
-            // 练习模式
+        if (isTask) {
+            this.validateTaskEntry(taskId).then((allowed) => {
+                if (allowed) {
+                    this.loadTask(taskId).finally(() => {
+                        this.startTimer();
+                    })
+                }
+            })
+        } else if (isPractice) {
+            // 练习模式：保存 logId 供提交时使用
+            this.practiceLogId = this.$route.query.logId || null
             this.initCountDown();
             this.startTimer();
             this.loadPracticePaper(paperId);
@@ -1120,58 +1477,6 @@ export default{
         document.addEventListener('keydown', this.handleKeyPress);
     },
 
-    // 启动定时器
-    startTimer() {
-        // 记录警告状态，避免重复提醒
-        let warning5min = false;
-        let warning1min = false;
-
-        // 保存定时器引用，便于清理
-        this.timer = setInterval(() =>{
-
-            let temp = countDown(this.countDown.startTime, this.countDown.endTime);
-            const totalSeconds = temp.h * 3600 + temp.m * 60 + temp.s;
-
-            // 剩余 5 分钟警告
-            if (totalSeconds === 300 && !warning5min) {
-                this.$Notice.warning({
-                    title: '考试提醒',
-                    desc: '距离考试结束还有 5 分钟，请抓紧时间！',
-                    duration: 0 // 不自动关闭
-                });
-                warning5min = true;
-            }
-
-            // 剩余 1 分钟警告
-            if (totalSeconds === 60 && !warning1min) {
-                this.$Notice.warning({
-                    title: '考试提醒',
-                    desc: '距离考试结束还有 1 分钟！请尽快完成答题！',
-                    duration: 0
-                });
-                warning1min = true;
-            }
-
-            if(contrastCountDown(temp.h, temp.m, temp.s)){
-
-                this.$Modal.warning({
-                    title: '考试时间已到',
-                    content: '考试时间已到，系统将自动提交您的试卷',
-                    onOk: () => {
-                        this.doSubmit();
-                        if (this.timer) {
-                            clearInterval(this.timer);
-                            this.timer = null;
-                        }
-                    },
-                });
-            }else{
-
-                this.countDown.text = formatCountDown(temp.h, temp.m, temp.s);
-                this.countDown.startTime = formatDate(new Date());
-            }
-        }, 1000);
-    },
     beforeUnmount() {
         // 清理定时器，防止内存泄漏
         if (this.timer) {

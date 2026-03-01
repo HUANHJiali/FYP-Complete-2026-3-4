@@ -1,15 +1,15 @@
 <template>
-    	<Layout>
-		<Menus :menuList="($store.state.menus && $store.state.menus.children) || []"></Menus>
+	    	<Layout :class="{ 'answer-route-layout': $route.name === 'answer' }">
+			<Menus v-if="$route.name !== 'answer'" :menuList="($store.state.menus && $store.state.menus.children) || []"></Menus>
 		<Layout>
-			<Header class="fater-header">
+			<Header class="fater-header" :class="{ 'no-sidebar-header': $route.name === 'answer' }">
 				<Breadcrumb v-if="$route.name !== 'welcome'" class="fater-header-nav">
 					<BreadcrumbItem :to="{ name: 'welcome' }">系统首页</BreadcrumbItem>
 					<BreadcrumbItem>{{ getCurrentPageTitle() }}</BreadcrumbItem>
 				</Breadcrumb>
 				<Nav></Nav>
 			</Header>
-			<Content class="fater-layout-body">
+			<Content class="fater-layout-body" :class="{ 'no-sidebar-body': $route.name === 'answer' }">
 				<router-view></router-view>
 			</Content>
 		</Layout>
@@ -17,6 +17,14 @@
 </template>
 
 <style>
+.answer-route-layout .no-sidebar-header {
+	margin-left: 0 !important;
+}
+
+.answer-route-layout .no-sidebar-body {
+	left: 0 !important;
+	padding: 0 !important;
+}
 
 </style>
 

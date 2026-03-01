@@ -28,6 +28,12 @@
         <Card>
 			<div>
 				<Table border :columns="columns" :loading="loading" :data="pageInfos">
+                    <template #examNameSlot="{ row }">
+                        <QuestionContentRenderer :content="row.examName" compact />
+                    </template>
+                    <template #projectNameSlot="{ row }">
+                        <QuestionContentRenderer :content="row.projectName" compact />
+                    </template>
 					<template #action="{ row }">
                         <Tag v-if="row.status == 0" type="border" color="primary">考试中</Tag>
 						<Tag v-else-if="row.status == 1"
@@ -81,7 +87,7 @@
 }
 
 .ivu-card-head-inner {
-    color: #fff;
+    color: #000;
     font-size: 16px;
     font-weight: 600;
 }
@@ -143,7 +149,7 @@
 
 .ivu-table th {
     background: linear-gradient(135deg, #1890ff 0%, #0050b3 100%);
-    color: #fff;
+    color: #000;
     font-weight: 600;
 }
 
@@ -170,13 +176,13 @@
 .ivu-tag-primary {
     background: linear-gradient(135deg, #1890ff 0%, #0050b3 100%);
     border-color: #1890ff;
-    color: #fff;
+    color: #000;
 }
 
 .ivu-tag-blue {
     background: linear-gradient(135deg, #40a9ff 0%, #1890ff 100%);
     border-color: #40a9ff;
-    color: #fff;
+    color: #000;
 }
 
 /* Page 美化 */
@@ -191,7 +197,7 @@
 
 .ivu-page-item:hover {
     background: #1890ff;
-    color: #fff;
+    color: #000;
 }
 
 .ivu-page-item-active {
@@ -236,13 +242,16 @@ import {
     getLoginUser,
     getAllProjects,
 } from '../../api/index.js';
+import QuestionContentRenderer from '@/components/QuestionContentRenderer.vue';
 export default{
+	components: {
+		QuestionContentRenderer
+	},
 		
     data(){
         return {
             projects: [],
             userInfo: {},
-            pageInfos: [],
             pageInfos: [],
             pageIndex: 1,
             pageSize: 10,
@@ -256,8 +265,9 @@ export default{
             },
             columns: [
                 {title: '序号', type: 'index', width: 70, align: 'center'},
-                {title: '考试名称', key: 'examName', align: 'center'},
-                {title: '考核科目', key: 'projectName', align: 'center'},
+                {title: '学生姓名', key: 'studentName', align: 'center'},
+                {title: '考试名称', slot: 'examNameSlot', align: 'center'},
+                {title: '考核科目', slot: 'projectNameSlot', align: 'center'},
                 {title: '审核教师', key: 'teacherName', align: 'center'},
                 {title: '考试时间', key: 'createTime', align: 'center'},
                 {title: '考试结果', slot: 'action', align: 'center'}
@@ -296,7 +306,12 @@ export default{
         getLoginUser(this.$store.state.token).then(resp =>{
 
             this.userInfo = resp.data;
-            this.qryForm.studentId = resp.data.id;
+            // 只有学生(type=2)才按自身ID过滤，管理员(0)和教师(1)查看所有记录
+            if (resp.data.type == 2) {
+                this.qryForm.studentId = resp.data.id;
+                // 学生视图不显示学生姓名列（只看自己的记录）
+                this.columns = this.columns.filter(c => c.key !== 'studentName');
+            }
             this.getPageInfo(1, this.pageSize);
         });
         

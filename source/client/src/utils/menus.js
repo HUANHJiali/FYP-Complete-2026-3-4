@@ -59,7 +59,7 @@ export const adminMenus = {
             name: '校园考试管理',
             translationKey: 'menu.exams',
             icon: "md-speedometer",
-            component: require("../views/pages/exams.vue").default
+            component: require("../views/pages/adminExams.vue").default
         },
         {
             path: '/aiScoring',
@@ -83,6 +83,13 @@ export const adminMenus = {
             component: require('../views/pages/adminPracticePapers.vue').default
         },
         {
+            path: '/adminTasks',
+            name: '任务管理',
+            translationKey: 'menu.adminTasks',
+            icon: 'ios-checkmark-circle',
+            component: require('../views/pages/adminTasks.vue').default
+        },
+        {
             path: '/practiceLogs',
             name: '学生练习记录',
             translationKey: 'menu.practiceLogs',
@@ -102,6 +109,27 @@ export const adminMenus = {
             translationKey: 'menu.adminLogs',
             icon: 'ios-document',
             component: require('../views/pages/adminLogs.vue').default
+        },
+        {
+            path: '/dataDashboard',
+            name: '数据大屏',
+            translationKey: 'menu.dataDashboard',
+            icon: 'ios-podium',
+            component: require('../views/pages/DataDashboard.vue').default
+        },
+        {
+            path: '/classComparison',
+            name: '班级对比分析',
+            translationKey: 'menu.classComparison',
+            icon: 'ios-git-compare',
+            component: require('../views/pages/ClassComparison.vue').default
+        },
+        {
+            path: '/studentProgress',
+            name: '学生进步分析',
+            translationKey: 'menu.studentProgress',
+            icon: 'ios-trending-up',
+            component: require('../views/pages/StudentProgress.vue').default
         }
 
     ]
@@ -233,6 +261,13 @@ export const studentMenus = {
             component: require("../views/pages/dataVisualization.vue").default
         },
         {
+            path: '/studentProgress',
+            name: '学习分析',
+            translationKey: 'menu.studentProgress',
+            icon: 'ios-trending-up',
+            component: require('../views/pages/StudentProgress.vue').default
+        },
+        {
             path: '/studentProfile',
             name: '个人信息',
             translationKey: 'menu.studentProfile',
@@ -294,6 +329,8 @@ export default function initMenu(router, store){
             });
         }catch(e){}
 
-        router.push('/welcome');
-	});
+        router.push('/welcome').catch(() => {});
+	}).catch(err => {
+        console.error('获取用户信息失败，请重新登录', err);
+    });
 }

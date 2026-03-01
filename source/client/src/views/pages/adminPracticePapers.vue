@@ -155,6 +155,13 @@ export default {
     }
   },
   methods: {
+    formatDateTimeForApi(val){
+      if (!val) return ''
+      const date = val instanceof Date ? val : new Date(val)
+      if (Number.isNaN(date.getTime())) return ''
+      const pad = n => String(n).padStart(2, '0')
+      return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+    },
     async loadProjects(){
       try { const resp = await getAllProjects(); if (resp.code === 0) this.projects = resp.data; } catch(e) { /* ignore */ }
     },
@@ -241,14 +248,16 @@ export default {
       try{
         const f = this.createExam.form
         if (!f.teacherId || !f.gradeId){ this.$Message.warning('请填写教师工号与年级ID'); return }
+        const paperId = this.selectedRow?.id || this.selectedRow?.paperId || this.selectedRow?.practicePaperId
+        if (!paperId) { this.$Message.warning('试卷ID缺失，请重新选择试卷后再试'); return }
         const resp = await http.post('/exams/create_from_practice_paper/', {
-          paperId: this.selectedRow.id,
+          paperId,
           name: f.name,
           teacherId: f.teacherId,
           gradeId: f.gradeId,
-          examTime: f.examTime ? f.examTime : '',
-          startTime: f.startTime ? f.startTime : '',
-          endTime: f.endTime ? f.endTime : ''
+          examTime: this.formatDateTimeForApi(f.examTime),
+          startTime: this.formatDateTimeForApi(f.startTime),
+          endTime: this.formatDateTimeForApi(f.endTime)
         })
         if (resp.code === 0){
           this.$Message.success('考试创建成功')

@@ -187,6 +187,16 @@ export function getPageExams(pageIndex, pageSize, name, teacherId, gradeId, proj
         }
     });
 }
+export function getExams(params = {}){
+    return getPageExams(
+        params.pageIndex || 1,
+        params.pageSize || 10,
+        params.name || '',
+        params.teacherId || '',
+        params.gradeId || '',
+        params.projectId || ''
+    )
+}
 export function getExamInfo(id){
 
 	return http.get('/exams/info/', {params: {id: id}});
@@ -213,6 +223,14 @@ export function getPageStudentExamLogs(pageIndex, pageSize, examName, studentId,
             examName: examName || '',
             studentId: studentId || '',
             projectId: projectId || ''
+        }
+    });
+}
+export function getStudentExams(token, pageIndex = 1, pageSize = 100){
+    return http.get('/examlogs/pagestu/', {
+        params: {
+            pageIndex: pageIndex || 1,
+            pageSize: pageSize || 100
         }
     });
 }
@@ -257,8 +275,10 @@ export function checkAnswers(studentId, examId){
         {params: {studentId: studentId, examId: examId}});
 }
 export function addAnswerLog(params){
-    
-    return http.post('/answerlogs/add/', params, { headers: { 'Content-Type': 'application/json' } });
+    return http.post('/answerlogs/add/', params, {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 180000
+    });
 }
 export function aduitAnswerLog(params){
 	
@@ -478,6 +498,14 @@ export function getAdminDashboard() {
     return http.get('/admin/dashboard/');
 }
 
+export function getAdminDashboardCards() {
+    return http.get('/admin/dashboard_cards/');
+}
+
+export function getAdminTrends() {
+    return http.get('/admin/trends/');
+}
+
 // 用户管理
 export function getAdminUsers(params) {
     return http.get('/admin/users/', { params });
@@ -605,6 +633,10 @@ export function getAdminExamStatistics(examId) {
 
 export function getAdminStudentStatistics(studentId, days = 30) {
     return http.get('/admin/statistics_student/', { params: { studentId, days } });
+}
+
+export function getStudentProgressStats(studentId, timeRange = 'semester') {
+    return http.get('/statistics/student_progress/', { params: { studentId, timeRange } });
 }
 
 export function getAdminClassStatistics(gradeId) {

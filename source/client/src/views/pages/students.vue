@@ -814,6 +814,7 @@ import {
     batchImportStudents,
     downloadStudentsTemplate,
 } from '../../api/index.js';
+import { triggerBlobDownload } from '../../utils/fileDownload';
 export default{
 		
     data(){
@@ -964,15 +965,7 @@ export default{
         async downloadTemplate() {
             try {
                 const resp = await downloadStudentsTemplate()
-                const blob = new Blob([resp.data || resp], { type: 'text/csv;charset=utf-8;' })
-                const url = URL.createObjectURL(blob)
-                const a = document.createElement('a')
-                a.href = url
-                a.download = 'students_template.csv'
-                document.body.appendChild(a)
-                a.click()
-                document.body.removeChild(a)
-                URL.revokeObjectURL(url)
+                triggerBlobDownload(resp.data || resp, 'students_template.csv', 'text/csv;charset=utf-8;')
                 this.$Message.success('模板下载成功')
             } catch (e) {
                 console.error('下载模板失败', e)

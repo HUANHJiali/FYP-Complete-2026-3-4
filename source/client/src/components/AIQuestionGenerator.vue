@@ -164,6 +164,11 @@
     <div v-if="successMessage" class="success-message">
       {{ successMessage }}
     </div>
+
+    <div v-if="qualitySummary" class="quality-message" :class="qualityStatusClass">
+      <div v-if="qualityStatusText" class="quality-status-tag">{{ qualityStatusText }}</div>
+      <div class="quality-content">{{ qualitySummary }}</div>
+    </div>
   </div>
 </template>
 
@@ -180,6 +185,9 @@ export default {
     const error = ref('')
     const progressText = ref('')
     const successMessage = ref('')
+    const qualitySummary = ref('')
+    const qualityStatusText = ref('')
+    const qualityStatusClass = ref('')
     const generatedQuestions = ref([])
 
     const projects = ref([])
@@ -234,6 +242,93 @@ export default {
       throw lastErr
     }
 
+    const extractQualityMetrics = (quality) => {
+      if (!quality || typeof quality !== 'object') return null
+      const requested = Number(quality.requestedCount ?? 0)
+      const finalCount = Number(quality.finalCount ?? 0)
+      const duplicate = Number(quality.droppedDuplicate ?? 0)
+      const similar = Number(quality.droppedSimilar ?? 0)
+      const refillRounds = Number(quality.refillRounds ?? 0)
+      if (requested === 0 && finalCount === 0 && duplicate === 0 && similar === 0 && refillRounds === 0) {
+        return null
+      }
+      return { requested, finalCount, duplicate, similar, refillRounds }
+    }
+
+    const resolveQualityStatus = (metrics) => {
+      if (!metrics) return { text: '', className: '' }
+      const dropTotal = metrics.duplicate + metrics.similar
+      const reachRate = metrics.requested > 0 ? metrics.finalCount / metrics.requested : 0
+
+      if (metrics.finalCount >= metrics.requested && dropTotal === 0) {
+        return { text: '达标', className: 'quality-good' }
+      }
+      if (metrics.finalCount > 0 && reachRate >= 0.8) {
+        return { text: '有过滤', className: 'quality-warning' }
+      }
+      return { text: '需关注', className: 'quality-attention' }
+    }
+
+    const setQualityStatus = (metrics) => {
+      const status = resolveQualityStatus(metrics)
+      qualityStatusText.value = status.text
+      qualityStatusClass.value = status.className
+    }
+
+    const clearQualityStatus = () => {
+      qualitySummary.value = ''
+      qualityStatusText.value = ''
+      qualityStatusClass.value = ''
+    }
+
+    const formatSingleQuality = (quality) => {
+      const metrics = extractQualityMetrics(quality)
+      setQualityStatus(metrics)
+      if (!metrics) return ''
+      return [
+        `生成质量：请求${metrics.requested}，产出${metrics.finalCount}`,
+        `去重${metrics.duplicate}，近似过滤${metrics.similar}，补齐轮次${metrics.refillRounds}`
+      ].join('\n')
+    }
+
+    const formatTypeQualityLine = (type, quality) => {
+      const metrics = extractQualityMetrics(quality)
+      if (!metrics) return ''
+      const name = getQuestionTypeName(Number(type))
+      return `${name}：请求${metrics.requested}，产出${metrics.finalCount}；去重${metrics.duplicate}，近似过滤${metrics.similar}，补齐轮次${metrics.refillRounds}`
+    }
+
+    const formatBatchQuality = (qualityByType) => {
+      if (!qualityByType || typeof qualityByType !== 'object') return ''
+      const orderedTypes = ['0', '1', '2', '3']
+      let totalRequested = 0
+      let totalFinal = 0
+      let totalDuplicate = 0
+      let totalSimilar = 0
+      const lines = orderedTypes
+        .filter((type) => qualityByType[type])
+        .map((type) => {
+          const metrics = extractQualityMetrics(qualityByType[type])
+          if (metrics) {
+            totalRequested += metrics.requested
+            totalFinal += metrics.finalCount
+            totalDuplicate += metrics.duplicate
+            totalSimilar += metrics.similar
+          }
+          return formatTypeQualityLine(type, qualityByType[type])
+        })
+        .filter(Boolean)
+      setQualityStatus({
+        requested: totalRequested,
+        finalCount: totalFinal,
+        duplicate: totalDuplicate,
+        similar: totalSimilar,
+        refillRounds: 0
+      })
+      if (!lines.length) return ''
+      return ['分类型质量：', ...lines].join('\n')
+    }
+
     const generateQuestions = async () => {
       // 验证表单
       if (!formData.subject || !formData.topic) {
@@ -244,6 +339,7 @@ export default {
       loading.value = true
       error.value = ''
       successMessage.value = ''
+      clearQualityStatus()
 
       cancelSource.value = axios.CancelToken ? axios.CancelToken.source() : null
       try {
@@ -265,6 +361,7 @@ export default {
         if (response.code === 0) {
           generatedQuestions.value = response.data.questions
           successMessage.value = `成功生成 ${response.data.count} 道题目`
+          qualitySummary.value = formatSingleQuality(response.data?.generationQuality)
         } else {
           error.value = response.msg || '生成题目失败'
         }
@@ -295,6 +392,7 @@ export default {
       loading.value = true
       error.value = ''
       successMessage.value = ''
+      clearQualityStatus()
 
       cancelSource.value = axios.CancelToken ? axios.CancelToken.source() : null
       try {
@@ -313,6 +411,7 @@ export default {
         ))
         if (response.code === 0) {
           successMessage.value = response.data?.message || '生成并保存成功'
+          qualitySummary.value = formatSingleQuality(response.data?.generationQuality)
           generatedQuestions.value = []
         } else {
           error.value = response.msg || '生成并保存失败'
@@ -344,6 +443,7 @@ export default {
       loading.value = true
       error.value = ''
       successMessage.value = ''
+      clearQualityStatus()
 
       cancelSource.value = axios.CancelToken ? axios.CancelToken.source() : null
       try {
@@ -391,6 +491,7 @@ export default {
       loading.value = true
       error.value = ''
       successMessage.value = ''
+      clearQualityStatus()
 
       cancelSource.value = axios.CancelToken ? axios.CancelToken.source() : null
       try {
@@ -409,6 +510,7 @@ export default {
         if (response.code === 0) {
           const d = response.data || {}
           successMessage.value = `生成成功：共 ${d.created} 题，各类型 ${JSON.stringify(d.createdByType)}`
+          qualitySummary.value = formatBatchQuality(d.generationQualityByType)
           generatedQuestions.value = []
         } else {
           error.value = response.msg || '批量生成失败'
@@ -432,6 +534,7 @@ export default {
       loading.value = true
       error.value = ''
       successMessage.value = ''
+      clearQualityStatus()
       cancelSource.value = axios.CancelToken ? axios.CancelToken.source() : null
       try {
         const payload = {
@@ -511,6 +614,7 @@ export default {
       generatedQuestions.value = []
       error.value = ''
       successMessage.value = ''
+      clearQualityStatus()
     }
 
     const getQuestionTypeName = (type) => {
@@ -538,6 +642,9 @@ export default {
       error,
       progressText,
       successMessage,
+      qualitySummary,
+      qualityStatusText,
+      qualityStatusClass,
       generatedQuestions,
       projects,
       teachers,
@@ -819,5 +926,62 @@ export default {
   border-radius: 4px;
   margin-top: 16px;
   border-left: 4px solid #f39c12;
+}
+
+.quality-message {
+  background: #e8f4fd;
+  color: #1f4e79;
+  padding: 12px;
+  border-radius: 4px;
+  margin-top: 12px;
+  border-left: 4px solid #3498db;
+  line-height: 1.6;
+  white-space: pre-line;
+}
+
+.quality-content {
+  white-space: pre-line;
+}
+
+.quality-status-tag {
+  display: inline-block;
+  margin-bottom: 8px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.quality-message.quality-good {
+  background: #e8f7ee;
+  color: #1d6f42;
+  border-left-color: #27ae60;
+}
+
+.quality-message.quality-good .quality-status-tag {
+  background: #27ae60;
+  color: #fff;
+}
+
+.quality-message.quality-warning {
+  background: #fff8e1;
+  color: #8a6d3b;
+  border-left-color: #f39c12;
+}
+
+.quality-message.quality-warning .quality-status-tag {
+  background: #f39c12;
+  color: #fff;
+}
+
+.quality-message.quality-attention {
+  background: #fdecea;
+  color: #8e2f2f;
+  border-left-color: #e74c3c;
+}
+
+.quality-message.quality-attention .quality-status-tag {
+  background: #e74c3c;
+  color: #fff;
 }
 </style>

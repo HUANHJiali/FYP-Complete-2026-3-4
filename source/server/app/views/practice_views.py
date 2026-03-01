@@ -9,6 +9,8 @@ from app import models
 from app.permissions import get_user_from_request
 from comm.BaseView import BaseView
 from comm.CommUtils import DateUtil
+from comm.lifecycle_status import resolve_practice_lifecycle, status_text
+from comm.cache_decorator import cache_api_response
 from django.core.cache import cache
 from utils.OperationLogger import OperationLogger
 
@@ -97,6 +99,7 @@ class PracticePapersView(BaseView):
         })
 
     @staticmethod
+    @cache_api_response(timeout=60, key_prefix='practice_papers_page')
     def get_page_infos(request):
         """分页查询练习试卷信息"""
         pageIndex = request.GET.get('pageIndex', 1)
@@ -123,6 +126,7 @@ class PracticePapersView(BaseView):
         for item in list(paginator.page(pageIndex)):
             # 获取题目数量
             questionCount = models.PracticePaperQuestions.objects.filter(paper=item).count()
+            lifecycle_status = resolve_practice_lifecycle(log_status=None, is_active=item.isActive)
 
             resl.append({
                 'id': item.id,
@@ -135,7 +139,9 @@ class PracticePapersView(BaseView):
                 'projectId': item.project.id,
                 'projectName': item.project.name,
                 'createTime': item.createTime,
-                'questionCount': questionCount
+                'questionCount': questionCount,
+                'lifecycleStatus': lifecycle_status,
+                'lifecycleStatusText': status_text(lifecycle_status)
             })
 
         pageData = BaseView.parasePage(
@@ -205,6 +211,8 @@ class PracticePapersView(BaseView):
                 usedTime = 0
                 accuracy = 0
 
+            lifecycle_status = resolve_practice_lifecycle(log_status=status, is_active=paper.isActive)
+
             resl.append({
                 'id': paper.id,
                 'title': paper.title,
@@ -220,7 +228,9 @@ class PracticePapersView(BaseView):
                 'status': status,
                 'score': score,
                 'usedTime': usedTime,
-                'accuracy': accuracy
+                'accuracy': accuracy,
+                'lifecycleStatus': lifecycle_status,
+                'lifecycleStatusText': status_text(lifecycle_status)
             })
 
         return BaseView.successData(resl)
@@ -534,6 +544,8 @@ class StudentPracticeView(BaseView):
     def post(self, request, module, *args, **kwargs):
         if module == 'start':
             return self.start_practice(request)
+        elif module == 'save':
+            return self.save_practice(request)
         elif module == 'submit':
             return self.submit_practice(request)
         else:
@@ -775,6 +787,48 @@ class StudentPracticeView(BaseView):
             })
         except Exception as e:
             return BaseView.error(f'提交练习失败: {str(e)}')
+
+    @staticmethod
+    def save_practice(request):
+        """保存单题练习进度"""
+        try:
+            logId = request.POST.get('logId')
+            practiseId = request.POST.get('practiseId') or request.POST.get('id')
+            studentAnswer = request.POST.get('studentAnswer', '')
+
+            if not logId:
+                return BaseView.error('练习记录ID不能为空')
+            if not practiseId:
+                return BaseView.error('题目ID不能为空')
+
+            practiceLog = models.StudentPracticeLogs.objects.filter(id=logId).first()
+            if not practiceLog:
+                return BaseView.error('练习记录不存在')
+
+            practise = models.Practises.objects.filter(id=practiseId).first()
+            if not practise:
+                return BaseView.error('题目不存在')
+
+            answer = models.StudentPracticeAnswers.objects.filter(
+                practiceLog=practiceLog,
+                practise=practise
+            ).first()
+
+            if answer:
+                answer.studentAnswer = studentAnswer
+                answer.answerTime = DateUtil.getNowDateTime()
+                answer.save()
+            else:
+                models.StudentPracticeAnswers.objects.create(
+                    practiceLog=practiceLog,
+                    practise=practise,
+                    studentAnswer=studentAnswer,
+                    answerTime=DateUtil.getNowDateTime()
+                )
+
+            return BaseView.successData({'message': '保存成功'})
+        except Exception as e:
+            return BaseView.error(f'保存练习进度失败: {str(e)}')
 
     @staticmethod
     def export_practice_logs(request):

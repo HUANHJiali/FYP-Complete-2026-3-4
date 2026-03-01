@@ -20,7 +20,7 @@ from app import models
 from app.services.user_service import UserService
 from app.validators import InputValidator
 from comm.BaseView import BaseView
-from comm.CommUtils import DateUtil
+from comm.CommUtils import DateUtil, SysUtil
 from utils.OperationLogger import OperationLogger
 
 # 导入错误处理（如果可用）
@@ -107,8 +107,12 @@ class SysView(BaseView):
             if not user_id:
                 return BaseView.error('用户未登录')
 
+            message_type = request.GET.get('type', '').strip()
+
             # 获取消息读取记录（包含消息详情和发送者信息）
             reads_qs = models.MessageReads.objects.filter(user_id=user_id).select_related('message', 'message__sender')
+            if message_type:
+                reads_qs = reads_qs.filter(message__type=message_type)
             
             messages = []
             for read in reads_qs:
@@ -417,18 +421,44 @@ class SysView(BaseView):
         Returns:
             HttpResponse: 更新结果的JSON响应
         """
-        user = models.Users.objects.filter(id=cache.get(request.POST.get('token')))
-        if (request.POST.get('userName') != user.first().userName) & \
-                (models.Users.objects.filter(userName=request.POST.get('userName')).exists()):
+        token = request.POST.get('token')
+        user_id = cache.get(token) if token else None
+        if not user_id:
+            return BaseView.error('用户未登录')
+
+        user_obj = models.Users.objects.filter(id=user_id).first()
+        if not user_obj:
+            return BaseView.error('用户不存在')
+
+        new_user_name = request.POST.get('userName')
+        if SysUtil.isExit(new_user_name) and new_user_name != user_obj.userName and \
+                models.Users.objects.filter(userName=new_user_name).exclude(id=user_obj.id).exists():
             return BaseView.warn('用户账号已存在')
-        else:
-            user.update(
-                userName=request.POST.get('userName'),
-                name=request.POST.get('name'),
-                gender=request.POST.get('gender'),
-                age=request.POST.get('age'),
-            )
-            return BaseView.success()
+
+        update_data = {}
+        if SysUtil.isExit(new_user_name):
+            update_data['userName'] = new_user_name
+
+        new_name = request.POST.get('name')
+        if SysUtil.isExit(new_name):
+            update_data['name'] = new_name
+
+        new_gender = request.POST.get('gender')
+        if SysUtil.isExit(new_gender):
+            update_data['gender'] = new_gender
+
+        new_age = request.POST.get('age')
+        if SysUtil.isExit(new_age):
+            try:
+                update_data['age'] = int(new_age)
+            except Exception:
+                return BaseView.warn('年龄格式不正确')
+
+        if not update_data:
+            return BaseView.warn('未提供可更新字段')
+
+        models.Users.objects.filter(id=user_obj.id).update(**update_data)
+        return BaseView.success()
 
     # 修改用户密码
     @staticmethod

@@ -61,6 +61,12 @@
 
         <Modal fullscreen="true" v-model="showAuditFlag_1" footer-hide="true" title="填空题审核">
             <Table border :columns="pracCols1" :data="ansers_1">
+                <template #practiseName="{ row }">
+                    <QuestionContentRenderer :content="row.practiseName" compact />
+                </template>
+                <template #practiseAnswerText="{ row }">
+                    <QuestionContentRenderer :content="row.practiseAnswer" compact />
+                </template>
                 <template #action="{ row }">
                     <Button v-if="row.status==0" size="small" style="margin-right: 5px;"
                                     type="success" @click="auditLog(row.id, 1, 0)">正确</Button>
@@ -74,7 +80,7 @@
                     <span v-if="row.status==1" >{{ row.score }}</span>
                 </template>
                 <template #action1="{ row }">
-                    <span v-if="row.answer">{{ row.answer }}</span>
+                    <QuestionContentRenderer v-if="row.answer" :content="row.answer" compact />
                     <span v-else>未作答</span>
                 </template>
             </Table>
@@ -82,6 +88,9 @@
         
         <Modal fullscreen="true" v-model="showAuditFlag_2" footer-hide="true" title="编程题审核">
             <Table border :columns="pracCols2" :data="ansers_2">
+                <template #practiseName="{ row }">
+                    <QuestionContentRenderer :content="row.practiseName" compact />
+                </template>
                 <template #practiseAnswer="{ row }">
                     <Input v-model="row.practiseAnswer" type="textarea" :rows="6" :border="false"/>    
                 </template>
@@ -145,7 +154,7 @@
 }
 
 .ivu-card-head-inner {
-    color: #fff;
+    color: #000;
     font-size: 16px;
     font-weight: 600;
 }
@@ -236,7 +245,7 @@
 
 .ivu-table th {
     background: linear-gradient(135deg, #1890ff 0%, #0050b3 100%);
-    color: #fff !important;
+    color: #000 !important;
     font-weight: 600;
 }
 
@@ -275,7 +284,7 @@
 }
 
 .ivu-modal-header-inner {
-    color: #fff;
+    color: #000;
     font-weight: 600;
 }
 
@@ -289,7 +298,7 @@
 .ivu-tag-primary {
     background: linear-gradient(135deg, #1890ff 0%, #0050b3 100%);
     border-color: #1890ff;
-    color: #fff;
+    color: #000;
 }
 
 /* 响应式设计 */
@@ -330,7 +339,11 @@ import {
     aduitAnswerLog,
     putExamLog
 } from '../../api/index.js';
+import QuestionContentRenderer from '@/components/QuestionContentRenderer.vue';
 export default{
+    components: {
+        QuestionContentRenderer
+    },
 		
     data(){
         return {
@@ -350,7 +363,7 @@ export default{
             loading: true,
             qryForm: {
                 examName: "",
-                token: this.$store.state.token,
+                token: this.$store.state.token || sessionStorage.getItem('token') || '',
                 gradeId: "",
                 projectId: "",
             },
@@ -373,15 +386,15 @@ export default{
             ],
             pracCols1: [
                 {title: '序号', type: 'index', width: 70, align: 'center'},
-                {title: '考试题目', key: 'practiseName', width: 620, align: 'left'},
-                {title: '参考答案', key: 'practiseAnswer', align: 'left'},
+                {title: '考试题目', slot: 'practiseName', width: 620, align: 'left'},
+                {title: '参考答案', slot: 'practiseAnswerText', align: 'left'},
                 {title: '考生提交', slot: 'action1', align: 'left'},
                 {title: '审核结果', slot: 'score', width: 120, align: 'center'},
                 {title: '操作', slot: 'action', width: 300, align: 'center'}
             ],
             pracCols2: [
                 {title: '序号', type: 'index', width: 70, align: 'center'},
-                {title: '考试题目', key: 'practiseName', width: 580, align: 'left'},
+                {title: '考试题目', slot: 'practiseName', width: 580, align: 'left'},
                 {title: '参考答案', slot: 'practiseAnswer', align: 'left'},
                 {title: '考生提交', slot: 'answer', align: 'left'},
                 {title: '审核结果', slot: 'score', width: 120, align: 'center'},
@@ -508,6 +521,8 @@ export default{
         },
     },
     mounted(){
+        const token = this.$store.state.token || sessionStorage.getItem('token') || ''
+        this.qryForm.token = token
         
         getAllProjects().then(resp =>{
 
@@ -517,7 +532,7 @@ export default{
 
             this.grades = resp.data;
         });
-        getLoginUser(this.$store.state.token).then(resp =>{
+        getLoginUser(token).then(resp =>{
 
             this.userInfo = resp.data;
         });

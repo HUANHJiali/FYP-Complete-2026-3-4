@@ -240,7 +240,7 @@
     padding: 24px;
     background: linear-gradient(135deg, #1890ff 0%, #0050b3 100%);
     border-radius: 12px;
-    color: white;
+    color: #000;
 }
 
 .header-content {
@@ -252,7 +252,7 @@
 
 .header-icon {
     font-size: 32px;
-    color: rgba(255, 255, 255, 0.9);
+    color: #000;
 }
 
 .header-text h2 {
@@ -588,6 +588,7 @@
 
 <script>
 import { getAllProjects, getStudentPracticePapers, startPractice as apiStartPractice, submitPractice as apiSubmitPractice, generateWrongPracticePaper, exportPracticeLogs } from '../../api/index.js';
+import { triggerBlobDownload } from '../../utils/fileDownload';
 
 export default {
     name: 'Practises',
@@ -711,15 +712,7 @@ export default {
             try{
                 const token = this.$store.state.token || sessionStorage.getItem('token');
                 const resp = await exportPracticeLogs(token)
-                const blob = new Blob([resp.data || resp], { type: 'text/csv;charset=utf-8;' })
-                const url = URL.createObjectURL(blob)
-                const a = document.createElement('a')
-                a.href = url
-                a.download = 'practice_logs.csv'
-                document.body.appendChild(a)
-                a.click()
-                document.body.removeChild(a)
-                URL.revokeObjectURL(url)
+                triggerBlobDownload(resp.data || resp, 'practice_logs.csv', 'text/csv;charset=utf-8;')
             }catch(e){
                 console.error('导出失败', e)
                 this.$Message.error('导出练习记录失败')

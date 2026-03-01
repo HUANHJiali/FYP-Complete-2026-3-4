@@ -4,12 +4,14 @@
 """
 from django.core.paginator import Paginator
 from django.db.models import Q
+from datetime import datetime
 import json
 
 from app import models
 from app.permissions import get_user_from_request
 from comm.BaseView import BaseView
 from comm.CommUtils import DateUtil
+from comm.lifecycle_status import resolve_task_lifecycle, status_text
 from django.core.cache import cache
 from utils.OperationLogger import OperationLogger
 
@@ -36,6 +38,18 @@ def _log_task_operation(request, operation_type, resource_id, resource_name, sta
 
 class TasksView(BaseView):
     """任务管理视图"""
+
+    @staticmethod
+    def _parse_deadline(deadline_str):
+        """解析任务截止时间，兼容常见格式"""
+        if not deadline_str:
+            return None
+        for fmt in ['%Y-%m-%d %H:%M:%S', '%Y/%m/%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d']:
+            try:
+                return datetime.strptime(str(deadline_str).strip(), fmt)
+            except Exception:
+                continue
+        return None
 
     def _check_teacher_permission(self, request):
         """检查教师权限（教师和管理员可访问）"""
@@ -157,6 +171,11 @@ class TasksView(BaseView):
 
         resl = []
         for task in page:
+            lifecycle_status = resolve_task_lifecycle(
+                log_status=None,
+                deadline=task.deadline,
+                is_active=task.isActive
+            )
             resl.append({
                 'id': task.id,
                 'title': task.title,
@@ -168,7 +187,9 @@ class TasksView(BaseView):
                 'gradeName': task.grade.name,
                 'teacherName': task.teacher.name,
                 'createTime': task.createTime,
-                'isActive': task.isActive
+                'isActive': task.isActive,
+                'lifecycleStatus': lifecycle_status,
+                'lifecycleStatusText': status_text(lifecycle_status)
             })
 
         return BaseView.successData({
@@ -211,6 +232,12 @@ class TasksView(BaseView):
         resl = []
         for task in tasks:
             existingLog = existing_logs.get(task.id)
+            log_status = 'not_started' if not existingLog else existingLog.status
+            lifecycle_status = resolve_task_lifecycle(
+                log_status=log_status,
+                deadline=task.deadline,
+                is_active=task.isActive
+            )
 
             taskData = {
                 'id': task.id,
@@ -222,12 +249,14 @@ class TasksView(BaseView):
                 'projectName': task.project.name,
                 'teacherName': task.teacher.name,
                 'createTime': task.createTime,
-                'status': 'not_started' if not existingLog else existingLog.status,
+                'status': log_status,
                 'logId': existingLog.id if existingLog else None,
                 'startTime': existingLog.startTime if existingLog else None,
                 'endTime': existingLog.endTime if existingLog else None,
-                'score': existingLog.score if existingLog else None,
-                'accuracy': existingLog.accuracy if existingLog else None
+                'studentScore': existingLog.score if existingLog else None,
+                'accuracy': existingLog.accuracy if existingLog else None,
+                'lifecycleStatus': lifecycle_status,
+                'lifecycleStatusText': status_text(lifecycle_status)
             }
 
             resl.append(taskData)
@@ -268,9 +297,13 @@ class TasksView(BaseView):
     @staticmethod
     def start_task(request):
         """开始任务"""
-        studentId = cache.get(request.POST.get('token'))
-        if not studentId:
+        user = get_user_from_request(request)
+        if not user:
             return BaseView.error('用户未登录')
+        if user.type != 2:
+            return BaseView.error('仅学生可开始任务')
+
+        studentId = user.id
 
         taskId = request.POST.get('taskId')
         if not taskId:
@@ -280,6 +313,12 @@ class TasksView(BaseView):
         task = models.Tasks.objects.filter(id=taskId).first()
         if not task:
             return BaseView.error('任务不存在')
+
+        deadline_dt = TasksView._parse_deadline(task.deadline)
+        if not deadline_dt:
+            return BaseView.error('任务截止时间格式错误')
+        if datetime.now() > deadline_dt:
+            return BaseView.error('任务已截止，不能开始')
 
         # 检查学生是否已经做过这个任务
         existingLog = models.StudentTaskLogs.objects.filter(
@@ -312,6 +351,12 @@ class TasksView(BaseView):
     @staticmethod
     def save_task_progress(request):
         """保存任务进度"""
+        user = get_user_from_request(request)
+        if not user:
+            return BaseView.error('用户未登录')
+        if user.type != 2:
+            return BaseView.error('仅学生可保存任务进度')
+
         logId = request.POST.get('logId')
         if not logId:
             return BaseView.error('任务记录ID不能为空')
@@ -320,6 +365,10 @@ class TasksView(BaseView):
         taskLog = models.StudentTaskLogs.objects.filter(id=logId).first()
         if not taskLog:
             return BaseView.error('任务记录不存在')
+        if str(taskLog.student_id) != str(user.id):
+            return BaseView.error('无权限操作该任务记录')
+        if taskLog.status == 'completed':
+            return BaseView.error('任务已完成，不能继续保存')
 
         # 保存答案
         answers = request.POST.getlist('answers[]') or request.POST.getlist('answers')
@@ -357,6 +406,12 @@ class TasksView(BaseView):
     @staticmethod
     def submit_task(request):
         """提交任务"""
+        user = get_user_from_request(request)
+        if not user:
+            return BaseView.error('用户未登录')
+        if user.type != 2:
+            return BaseView.error('仅学生可提交任务')
+
         logId = request.POST.get('logId')
         if not logId:
             return BaseView.error('任务记录ID不能为空')
@@ -364,9 +419,17 @@ class TasksView(BaseView):
         taskLog = models.StudentTaskLogs.objects.filter(id=logId).first()
         if not taskLog:
             return BaseView.error('任务记录不存在')
+        if str(taskLog.student_id) != str(user.id):
+            return BaseView.error('无权限操作该任务记录')
 
         if taskLog.status == 'completed':
             return BaseView.error('任务已完成，不能重复提交')
+
+        deadline_dt = TasksView._parse_deadline(taskLog.task.deadline)
+        if not deadline_dt:
+            return BaseView.error('任务截止时间格式错误')
+        if datetime.now() > deadline_dt:
+            return BaseView.error('任务已截止，不能提交')
 
         # 自动评分并计算正确率
         answers = models.StudentTaskAnswers.objects.filter(taskLog=taskLog)
@@ -409,10 +472,16 @@ class TasksView(BaseView):
         task_type = request.POST.get('type', 'practice')
         deadline = request.POST.get('deadline')
         score = request.POST.get('score')
-        project_id = request.POST.get('projectId')
-        grade_id = request.POST.get('gradeId')
+        project_id = request.POST.get('projectId') or request.POST.get('project')
+        grade_id = request.POST.get('gradeId') or request.POST.get('grade')
         teacher_id = request.POST.get('teacherId')
         question_ids = request.POST.get('questionIds', '[]')
+
+        if not teacher_id:
+            token = request.POST.get('token') or request.META.get('HTTP_AUTHORIZATION', '').replace('Bearer ', '')
+            login_user_id = cache.get(token) if token else None
+            if login_user_id:
+                teacher_id = str(login_user_id)
 
         # 验证必填参数
         if not all([title, deadline, score, project_id, grade_id, teacher_id]):
@@ -525,6 +594,10 @@ class TasksView(BaseView):
     def del_info(request):
         """删除任务"""
         ids = request.POST.get('ids')
+        single_id = request.POST.get('id')
+
+        if not ids and single_id:
+            ids = single_id
 
         if not ids:
             return BaseView.error('缺少任务ID列表')

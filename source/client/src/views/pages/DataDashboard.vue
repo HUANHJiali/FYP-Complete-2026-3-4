@@ -154,6 +154,7 @@
 
 <script>
 import * as echarts from 'echarts'
+import http from '@/utils/http'
 
 export default {
   name: 'DataDashboard',
@@ -169,6 +170,13 @@ export default {
       gradeRanking: [],
       recentExams: [],
       activeStudents: [],
+      trendDays: [],
+      practiceTrend: [],
+      taskTrend: [],
+      questionTypeData: [],
+      subjectData: [],
+      activityDays: [],
+      activityData: [],
       examColumns: [
         { title: '考试名称', key: 'name' },
         { title: '学科', key: 'subject' },
@@ -206,83 +214,177 @@ export default {
     },
     async loadDashboardData() {
       try {
-        const resp = await fetch('/api/admin/dashboard/')
-        const data = await resp.json()
-        
-        if (data.code === 0) {
+        const data = await http.get('/admin/dashboard/')
+        if (data.code === 0 && data.data) {
+          const overview = data.data.overview || {}
+          const trends7d = data.data.trends_7d || {}
           this.stats = {
-            totalStudents: data.data.totalStudents || 0,
-            totalTeachers: data.data.totalTeachers || 0,
-            totalQuestions: data.data.totalQuestions || 0,
-            totalExams: data.data.totalExams || 0
+            totalStudents: overview.total_students || 0,
+            totalTeachers: overview.total_teachers || 0,
+            totalQuestions: overview.total_questions || 0,
+            totalExams: overview.total_exams || 0
           }
+          this.trendDays = trends7d.days || []
+          this.practiceTrend = trends7d.practices || []
+          this.taskTrend = trends7d.tasks || []
+
+          this.activityDays = this.trendDays.length ? [...this.trendDays] : ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+          this.activityData = this.practiceTrend.map((value, index) => (Number(value) || 0) + (Number(this.taskTrend[index]) || 0))
         }
       } catch (e) {
-        this.loadMockData()
+        console.error('加载看板数据失败', e)
       }
 
-      this.loadGradeRanking()
-      this.loadRecentExams()
-      this.loadActiveStudents()
+      await this.loadGradeRanking()
+      await this.loadRecentExams()
+      await this.loadActiveStudents()
+      await this.loadQuestionAndSubjectData()
       this.$nextTick(() => {
         this.renderCharts()
       })
     },
-    loadMockData() {
-      this.stats = {
-        totalStudents: 156,
-        totalTeachers: 12,
-        totalQuestions: 856,
-        totalExams: 24
-      }
-    },
     async loadGradeRanking() {
       try {
-        const resp = await fetch('/api/grades/all/')
-        const data = await resp.json()
-        if (data.code === 0) {
-          this.gradeRanking = (data.data || []).map(g => ({
-            ...g,
-            avgScore: Math.floor(Math.random() * 30 + 70)
-          })).sort((a, b) => b.avgScore - a.avgScore).slice(0, 5)
+        const gradesResp = await http.get('/grades/all/')
+        const grades = (gradesResp.code === 0 && gradesResp.data) ? gradesResp.data : []
+        const gradeIds = grades.map(g => g.id).slice(0, 10)
+
+        if (gradeIds.length >= 2) {
+          const compareResp = await http.get('/statistics/compare_classes/', {
+            params: {
+              gradeIds: gradeIds.join(',')
+            }
+          })
+          if (compareResp.code === 0 && compareResp.data && compareResp.data.comparisonData) {
+            this.gradeRanking = compareResp.data.comparisonData.slice(0, 5).map(item => ({
+              id: item.gradeId,
+              name: item.gradeName,
+              avgScore: Number(item.examStats?.avgScore || 0)
+            }))
+          }
         }
       } catch (e) {
-        this.gradeRanking = [
-          { id: 1, name: '计算机1班', avgScore: 89 },
-          { id: 2, name: '计算机2班', avgScore: 85 },
-          { id: 3, name: '软件1班', avgScore: 82 },
-          { id: 4, name: '软件2班', avgScore: 78 },
-          { id: 5, name: '网络1班', avgScore: 75 }
-        ]
+        console.error('加载班级排名失败', e)
+      }
+
+      if (!this.gradeRanking.length) {
+        this.gradeRanking = []
       }
     },
     async loadRecentExams() {
       try {
-        const resp = await fetch('/api/exams/page/?pageIndex=1&pageSize=5')
-        const data = await resp.json()
+        const data = await http.get('/exams/page/', {
+          params: {
+            pageIndex: 1,
+            pageSize: 5
+          }
+        })
         if (data.code === 0) {
-          this.recentExams = (data.data.data || []).map(e => ({
+          const list = data.data?.data || data.data?.list || []
+          this.recentExams = list.map(e => ({
             name: e.name,
             subject: e.projectName,
-            participants: Math.floor(Math.random() * 50 + 20),
-            avgScore: Math.floor(Math.random() * 20 + 70)
+            participants: Number(e.participants || e.studentCount || 0),
+            avgScore: Number(e.avgScore || 0)
           }))
         }
       } catch (e) {
-        this.recentExams = [
-          { name: 'Python期末考试', subject: 'Python', participants: 45, avgScore: 82 },
-          { name: 'Java期中考试', subject: 'Java', participants: 38, avgScore: 78 },
-          { name: '数据结构测试', subject: '数据结构', participants: 42, avgScore: 75 }
-        ]
+        console.error('加载最近考试失败', e)
+      }
+
+      if (!this.recentExams.length) {
+        this.recentExams = []
       }
     },
     async loadActiveStudents() {
-      this.activeStudents = [
-        { name: '张三', grade: '计算机1班', practiceCount: 28, avgScore: 92 },
-        { name: '李四', grade: '计算机2班', practiceCount: 25, avgScore: 88 },
-        { name: '王五', grade: '软件1班', practiceCount: 22, avgScore: 85 },
-        { name: '赵六', grade: '软件2班', practiceCount: 20, avgScore: 82 }
-      ]
+      try {
+        const data = await http.get('/students/page/', {
+          params: {
+            pageIndex: 1,
+            pageSize: 5
+          }
+        })
+        if (data.code === 0) {
+          const list = data.data?.data || data.data?.list || []
+          this.activeStudents = list.map(student => ({
+            name: student.name,
+            grade: student.gradeName || '',
+            practiceCount: Number(student.practiceCount || 0),
+            avgScore: Number(student.avgScore || 0)
+          }))
+        }
+      } catch (e) {
+        console.error('加载活跃学生失败', e)
+      }
+
+      if (!this.activeStudents.length) {
+        this.activeStudents = []
+      }
+    },
+    async loadQuestionAndSubjectData() {
+      try {
+        const data = await http.get('/practises/page/', {
+          params: {
+            pageIndex: 1,
+            pageSize: 500,
+            name: '',
+            type: '',
+            projectId: ''
+          }
+        })
+
+        if (data.code === 0) {
+          const list = data.data?.data || data.data?.list || []
+          const typeNameMap = {
+            0: '选择题',
+            1: '填空题',
+            2: '判断题',
+            3: '编程题'
+          }
+          const typeColorMap = {
+            '选择题': '#2d8cf0',
+            '填空题': '#19be6b',
+            '判断题': '#ff9900',
+            '编程题': '#ed4014'
+          }
+          const subjectColorPool = ['#2d8cf0', '#19be6b', '#ff9900', '#ed4014', '#9b59b6', '#36cfc9']
+
+          const typeCounter = {}
+          const subjectCounter = {}
+
+          list.forEach(item => {
+            const typeName = typeNameMap[item.type] || '其他'
+            typeCounter[typeName] = (typeCounter[typeName] || 0) + 1
+
+            const subjectName = item.projectName || item.project || '未知学科'
+            subjectCounter[subjectName] = (subjectCounter[subjectName] || 0) + 1
+          })
+
+          this.questionTypeData = Object.keys(typeCounter).map(name => ({
+            value: typeCounter[name],
+            name,
+            itemStyle: { color: typeColorMap[name] || '#8c8c8c' }
+          }))
+
+          this.subjectData = Object.keys(subjectCounter)
+            .map((name, index) => ({
+              value: subjectCounter[name],
+              name,
+              itemStyle: { color: subjectColorPool[index % subjectColorPool.length] }
+            }))
+            .sort((a, b) => b.value - a.value)
+            .slice(0, 6)
+        }
+      } catch (e) {
+        console.error('加载题型与学科分布失败', e)
+      }
+
+      if (!this.questionTypeData.length) {
+        this.questionTypeData = []
+      }
+      if (!this.subjectData.length) {
+        this.subjectData = []
+      }
     },
     renderCharts() {
       this.renderExamTrendChart()
@@ -304,7 +406,7 @@ export default {
           trigger: 'axis'
         },
         legend: {
-          data: ['考试次数', '平均分']
+          data: ['练习完成数', '任务完成数']
         },
         grid: {
           left: '3%',
@@ -314,32 +416,23 @@ export default {
         },
         xAxis: {
           type: 'category',
-          data: ['1月', '2月', '3月', '4月', '5月', '6月']
+          data: this.trendDays.length ? this.trendDays : ['近7天']
         },
-        yAxis: [
-          {
-            type: 'value',
-            name: '次数'
-          },
-          {
-            type: 'value',
-            name: '分数',
-            min: 0,
-            max: 100
-          }
-        ],
+        yAxis: {
+          type: 'value',
+          name: '次数'
+        },
         series: [
           {
-            name: '考试次数',
+            name: '练习完成数',
             type: 'bar',
-            data: [5, 8, 12, 10, 15, 18],
+            data: this.practiceTrend.length ? this.practiceTrend : [0],
             itemStyle: { color: '#2d8cf0' }
           },
           {
-            name: '平均分',
+            name: '任务完成数',
             type: 'line',
-            yAxisIndex: 1,
-            data: [75, 78, 80, 82, 85, 83],
+            data: this.taskTrend.length ? this.taskTrend : [0],
             itemStyle: { color: '#19be6b' }
           }
         ]
@@ -364,12 +457,7 @@ export default {
           {
             type: 'pie',
             radius: '60%',
-            data: [
-              { value: 320, name: '选择题', itemStyle: { color: '#2d8cf0' } },
-              { value: 180, name: '填空题', itemStyle: { color: '#19be6b' } },
-              { value: 150, name: '判断题', itemStyle: { color: '#ff9900' } },
-              { value: 106, name: '编程题', itemStyle: { color: '#ed4014' } }
-            ],
+            data: this.questionTypeData.length ? this.questionTypeData : [{ value: 1, name: '暂无数据', itemStyle: { color: '#d9d9d9' } }],
             label: {
               formatter: '{b}\n{d}%'
             }
@@ -406,18 +494,14 @@ export default {
         },
         yAxis: {
           type: 'category',
-          data: ['Python', 'Java', 'C语言', '数据结构', '算法']
+          data: this.subjectData.length ? this.subjectData.map(item => item.name) : ['暂无数据']
         },
         series: [
           {
             type: 'bar',
-            data: [
-              { value: 230, itemStyle: { color: '#2d8cf0' } },
-              { value: 180, itemStyle: { color: '#19be6b' } },
-              { value: 150, itemStyle: { color: '#ff9900' } },
-              { value: 120, itemStyle: { color: '#ed4014' } },
-              { value: 100, itemStyle: { color: '#9b59b6' } }
-            ]
+            data: this.subjectData.length
+              ? this.subjectData.map(item => ({ value: item.value, itemStyle: item.itemStyle }))
+              : [{ value: 0, itemStyle: { color: '#d9d9d9' } }]
           }
         ]
       }
@@ -446,7 +530,7 @@ export default {
         xAxis: {
           type: 'category',
           boundaryGap: false,
-          data: ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+          data: this.activityDays.length ? this.activityDays : ['近7天']
         },
         yAxis: {
           type: 'value'
@@ -455,7 +539,7 @@ export default {
           {
             type: 'line',
             smooth: true,
-            data: [120, 232, 301, 234, 290, 130, 110],
+            data: this.activityData.length ? this.activityData : [0],
             areaStyle: {
               color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
                 { offset: 0, color: 'rgba(45, 140, 240, 0.5)' },
@@ -478,10 +562,10 @@ export default {
 
 <style scoped>
 .data-dashboard {
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  background: #ffffff;
   min-height: 100vh;
   padding: 20px;
-  color: #fff;
+  color: #000000;
 }
 
 .dashboard-header {
@@ -494,21 +578,19 @@ export default {
   font-size: 32px;
   font-weight: 600;
   margin-bottom: 10px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: #000000;
 }
 
 .header-time {
   font-size: 18px;
-  color: #a0aec0;
+  color: #000000;
 }
 
 .stat-card {
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #ffffff;
+  border: 1px solid #e6ebf2;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
   padding: 20px;
   display: flex;
   align-items: center;
@@ -544,27 +626,27 @@ export default {
 .stat-value {
   font-size: 36px;
   font-weight: 700;
-  color: #fff;
+  color: #000000;
 }
 
 .stat-label {
   font-size: 14px;
-  color: #a0aec0;
+  color: #000000;
   margin-top: 5px;
 }
 
 .chart-card,
 .info-card {
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #ffffff;
+  border: 1px solid #e6ebf2;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
   margin-bottom: 16px;
 }
 
 .chart-card >>> .ivu-card-head,
 .info-card >>> .ivu-card-head {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  color: #fff;
+  border-bottom: 1px solid #edf1f7;
+  color: #000000;
 }
 
 .chart-card >>> .ivu-card-body,
@@ -584,7 +666,7 @@ export default {
   display: flex;
   align-items: center;
   padding: 12px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid #edf1f7;
 }
 
 .rank-number {
@@ -613,21 +695,21 @@ export default {
 
 .rank-name {
   flex: 1;
-  color: #e2e8f0;
+  color: #000000;
 }
 
 .info-card >>> .ivu-table {
   background: transparent;
-  color: #e2e8f0;
+  color: #000000;
 }
 
 .info-card >>> .ivu-table th {
-  background: rgba(255, 255, 255, 0.05);
-  color: #a0aec0;
+  background: #f8fafc;
+  color: #000000;
 }
 
 .info-card >>> .ivu-table td {
   background: transparent;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid #edf1f7;
 }
 </style>

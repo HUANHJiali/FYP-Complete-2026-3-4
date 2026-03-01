@@ -13,8 +13,16 @@ https://docs.djangoproject.com/en/4.1/ref/settings/
 from pathlib import Path
 import pymysql
 import os
+import sys
 import urllib.parse as urlparse
 from typing import List
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in ('1', 'true', 'yes', 'on')
 
 # Optionally load .env for local/dev usage; production should pass env via process manager
 try:
@@ -34,18 +42,22 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/4.1/howto/deployment/checklist/
 
 # Load configuration from environment for security and Docker compatibility
-# SECRET_KEY: should be provided via env in production
-SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-bh^5636f!$(au7fy^nzn()6*4ht974p(&pzcd&9z_**=t%^+^4')
+# DEBUG: 默认开发模式开启，生产环境请显式设置 DEBUG=False
+DEBUG = _env_bool('DEBUG', True)
 
-# DEBUG: set to 'True' in development environments
-DEBUG = os.getenv('DEBUG', 'True') == 'True'
+# SECRET_KEY: required in production; dev fallback only when DEBUG=True
+secret_key_env = os.getenv('SECRET_KEY')
+if secret_key_env:
+    SECRET_KEY = secret_key_env
+elif DEBUG:
+    SECRET_KEY = 'dev-insecure-key-local-only-change-in-production'
+else:
+    raise RuntimeError('SECRET_KEY must be set in environment when DEBUG=False')
 
 # ALLOWED_HOSTS: comma separated list in env, default to localhost for dev
-ALLOWED_HOSTS: List[str] = [h.strip() for h in os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',') if h.strip()]
-
-# Fail hard if in production without SECRET_KEY
-if not DEBUG and (not os.getenv('SECRET_KEY')):
-    raise RuntimeError('SECRET_KEY must be set in environment when DEBUG=False')
+ALLOWED_HOSTS: List[str] = [
+    h.strip() for h in os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,testserver').split(',') if h.strip()
+]
 
 
 # Application definition
@@ -64,18 +76,32 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
-    'comm.performance_monitor.PerformanceMonitorMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
+    'comm.csrf_api_exempt_middleware.ApiCsrfExemptMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',  # ✅ 安全修复：启用 CSRF 保护
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    # API限流中间件（可选，通过环境变���控制）
-    # 'app.middleware.RateLimitMiddleware',  # 暂时注释，避免影响现有功能
 ]
+
+TESTING = any(arg.startswith('test') for arg in sys.argv)
+
+ENABLE_PERFORMANCE_MONITOR = _env_bool('ENABLE_PERFORMANCE_MONITOR', not TESTING)
+if ENABLE_PERFORMANCE_MONITOR:
+    MIDDLEWARE.insert(0, 'comm.performance_monitor.PerformanceMonitorMiddleware')
+
+SLOW_REQUEST_THRESHOLD_MS = int(os.getenv('SLOW_REQUEST_THRESHOLD_MS', '1000'))
+SLOW_DB_QUERY_THRESHOLD_MS = int(os.getenv('SLOW_DB_QUERY_THRESHOLD_MS', '200'))
+ENABLE_DB_QUERY_OBSERVE = _env_bool('ENABLE_DB_QUERY_OBSERVE', DEBUG)
+
+ENABLE_RATE_LIMIT = _env_bool('ENABLE_RATE_LIMIT', not TESTING)
+if ENABLE_RATE_LIMIT:
+    MIDDLEWARE.append('app.middleware.RateLimitMiddleware')
+
+RATELIMIT_ENABLE = _env_bool('RATELIMIT_ENABLE', not TESTING)
 
 # 查询监控中间件（仅在DEBUG模式下启用，暂时注释掉避免导入错误）
 # if DEBUG:
@@ -92,12 +118,23 @@ if cors_env:
     CORS_ALLOWED_ORIGINS = [o.strip() for o in cors_env.split(',') if o.strip()]
     CORS_ORIGIN_ALLOW_ALL = False
 else:
-    # Dev-friendly default; override in production via env
-    CORS_ORIGIN_ALLOW_ALL = True
+    # 仅开发环境允许全开放，生产环境默认关闭
+    CORS_ORIGIN_ALLOW_ALL = DEBUG
+    CORS_ALLOWED_ORIGINS = []
+
+csrf_exempt_prefixes_env = os.getenv('CSRF_EXEMPT_PATH_PREFIXES', '/api/')
+CSRF_EXEMPT_PATH_PREFIXES = [p.strip() for p in csrf_exempt_prefixes_env.split(',') if p.strip()]
 
 csrf_env = os.getenv('CSRF_TRUSTED_ORIGINS', '')
 if csrf_env:
     CSRF_TRUSTED_ORIGINS = [o.strip() for o in csrf_env.split(',') if o.strip()]
+
+# 基础安全头
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = 'DENY'
+TRUST_PROXY_HEADERS = _env_bool('TRUST_PROXY_HEADERS', False)
+SESSION_COOKIE_SECURE = _env_bool('SESSION_COOKIE_SECURE', not DEBUG)
+CSRF_COOKIE_SECURE = _env_bool('CSRF_COOKIE_SECURE', not DEBUG)
 
 # 缓存设置
 # 开发环境直接使用内存缓存，生产环境可通过环境变量启用Redis
