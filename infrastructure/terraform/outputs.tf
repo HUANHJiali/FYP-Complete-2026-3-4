@@ -37,7 +37,7 @@ output "frontend_url" {
 
 output "backend_api_url" {
   description = "后端 API 访问 URL"
-  value       = var.enable_ha ? "http://${aws_lb.fyp_alb[0].dns_name}:8000" : "http://${aws_instance.fyp_backend[0].public_ip}:8000"
+  value       = var.enable_ha ? "http://${aws_lb.fyp_alb[0].dns_name}/api/" : "http://${aws_instance.fyp_backend[0].public_ip}:8000"
 }
 
 

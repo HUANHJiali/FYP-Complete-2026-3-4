@@ -17,4 +17,11 @@ tfplan.json
 aws-credentials
 *.pem
 *.key
+set-env.ps1
+
+# Local debug/bootstrap artifacts
+.bin/
+.fyp_*
+.tmp_fyp_key*
+fyp_*_key*
 

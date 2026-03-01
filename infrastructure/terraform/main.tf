@@ -117,9 +117,23 @@ exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
 echo "=== 开始 EC2 初始化 ==="
 date
 
-# 更新系统并安装 Docker
+# 更新系统并安装 Docker（兼容 Ubuntu 24）
 apt-get update
-apt-get install -y docker.io docker-compose git curl
+apt-get install -y docker.io docker-compose-plugin git curl || {
+  echo "primary install failed, retrying with fallback packages"
+  apt-get install -y docker.io git curl
+}
+
+# 兼容旧脚本对 docker-compose 命令的依赖
+if ! command -v docker-compose >/dev/null 2>&1; then
+  if docker compose version >/dev/null 2>&1; then
+    cat >/usr/local/bin/docker-compose <<'EOS'
+#!/bin/bash
+docker compose "$@"
+EOS
+    chmod +x /usr/local/bin/docker-compose
+  fi
+fi
 
 # 启动并启用 Docker
 systemctl start docker
@@ -163,6 +177,8 @@ echo "部署脚本已在后台启动，查看日志: tail -f /tmp/deploy.log"
 echo "=== EC2 初始化完成 ==="
 date
 EOF
+
+  user_data_replace_on_change = true
 
   tags = {
     Name    = "fyp-backend-${count.index + 1}"
