@@ -1,5 +1,5 @@
 # 前端生产环境 Dockerfile - 使用 Nginx 服务静态文件
-FROM node:18-alpine as builder
+FROM node:18-bullseye as builder
 
 # 设置工作目录
 WORKDIR /app

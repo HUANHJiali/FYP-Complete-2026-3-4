@@ -74,7 +74,14 @@ variable "db_password" {
 variable "github_repo_url" {
   description = "GitHub 仓库 URL"
   type        = string
-  default     = "https://github.com/HUANHJiali/FYP2025-12-27.git"
+  default     = "https://github.com/HUANHJiali/FYP-2026-3-1.git"
+}
+
+variable "github_deploy_key_private" {
+  description = "GitHub Deploy Key 私钥内容（PEM，多行；用于克隆私有仓库）"
+  type        = string
+  default     = ""
+  sensitive   = true
 }
 
 # AWS 凭证（如果使用 AWS Academy Learner Lab）

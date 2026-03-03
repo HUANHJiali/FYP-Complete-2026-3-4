@@ -19,6 +19,30 @@
 
 ## 快速开始
 
+### Learner Lab 一键自动部署（推荐）
+
+每次 `Launch AWS Academy Learner Lab` 后，更新凭证并执行：
+
+```powershell
+cd infrastructure/terraform
+.\learner-lab-deploy.ps1
+```
+
+说明：
+- 默认行为：`init -> validate -> plan -> apply -> 健康检查`。
+- 健康检查失败时会自动回滚（`terraform destroy`），避免继续计费。
+- 只看计划不部署：
+
+```powershell
+.\learner-lab-deploy.ps1 -PlanOnly
+```
+
+- 部署后失败但保留资源排查：
+
+```powershell
+.\learner-lab-deploy.ps1 -SkipRollback
+```
+
 ### 1. 配置 AWS 凭证
 
 **⚠️ 重要：永远不要将真实的 AWS 凭证提交到 Git！**

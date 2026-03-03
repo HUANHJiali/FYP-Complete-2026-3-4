@@ -45,6 +45,7 @@ services:
       done &&
       echo 'MySQL 已就绪' &&
       python manage.py migrate --noinput &&
+      (python manage.py init_data || echo '⚠️ 演示数据初始化失败，系统继续启动') &&
       python manage.py collectstatic --noinput &&
       gunicorn server.wsgi:application --bind 0.0.0.0:8000 --workers 1 --timeout 120 --access-logfile - --error-logfile -
       "

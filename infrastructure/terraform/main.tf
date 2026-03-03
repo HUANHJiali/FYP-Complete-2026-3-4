@@ -108,6 +108,11 @@ resource "aws_instance" "fyp_backend" {
   vpc_security_group_ids = [aws_security_group.fyp_sg.id]
   subnet_id              = data.aws_subnets.default.ids[0]
 
+  root_block_device {
+    volume_size = 20
+    volume_type = "gp3"
+  }
+
   # 用户数据脚本 - 自动安装 Docker 和部署
   user_data = <<-EOF
 #!/bin/bash
@@ -119,6 +124,16 @@ date
 
 # 更新系统并安装 Docker（兼容 Ubuntu 24）
 apt-get update
+
+# 扩展根分区（让 EBS 扩容后的空间真正可用）
+if [ -b /dev/xvda ] && [ -b /dev/xvda1 ]; then
+  if ! command -v growpart >/dev/null 2>&1; then
+    apt-get install -y cloud-guest-utils || true
+  fi
+  growpart /dev/xvda 1 || true
+  resize2fs /dev/xvda1 || true
+fi
+
 apt-get install -y docker.io docker-compose-plugin git curl || {
   echo "primary install failed, retrying with fallback packages"
   apt-get install -y docker.io git curl
@@ -147,14 +162,51 @@ sleep 5
 
 cd /home/ubuntu
 
+# 配置仓库地址（可通过变量覆盖）
+REPO_URL="${var.github_repo_url}"
+
+if [ -z "$${HOME:-}" ]; then
+  export HOME=/home/ubuntu
+fi
+
+# 可选：配置 GitHub Deploy Key（方案一）
+if [ -n "${var.github_deploy_key_private}" ]; then
+  echo "检测到 github_deploy_key_private，启用 SSH Deploy Key 克隆..."
+  install -d -m 700 /home/ubuntu/.ssh
+  cat >/home/ubuntu/.ssh/github_deploy_key <<'EOKEY'
+${var.github_deploy_key_private}
+EOKEY
+  chmod 600 /home/ubuntu/.ssh/github_deploy_key
+  ssh-keyscan -H github.com >> /home/ubuntu/.ssh/known_hosts 2>/dev/null || true
+  chmod 644 /home/ubuntu/.ssh/known_hosts
+  chown -R ubuntu:ubuntu /home/ubuntu/.ssh
+
+  if echo "$REPO_URL" | grep -q '^https://github.com/'; then
+    REPO_URL=$(echo "$REPO_URL" | sed -E 's#^https://github.com/#git@github.com:#')
+  fi
+
+  export GIT_SSH_COMMAND='ssh -i /home/ubuntu/.ssh/github_deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts'
+fi
+
 # 克隆仓库（如已存在则 git pull）
 if [ ! -d "25FYP" ]; then
   echo "克隆仓库..."
-  git clone https://github.com/HUANHJiali/FYP2025-12-27.git 25FYP 2>&1 | tee /tmp/git-clone.log
+  GIT_TERMINAL_PROMPT=0 git clone "$REPO_URL" 25FYP 2>&1 | tee /tmp/git-clone.log || {
+    echo "git clone 失败，尝试下载仓库压缩包..."
+    ARCHIVE_URL="$${REPO_URL%.git}/archive/refs/heads/main.tar.gz"
+    mkdir -p 25FYP
+    if curl -fsSL "$ARCHIVE_URL" -o /tmp/repo-main.tar.gz; then
+      tar -xzf /tmp/repo-main.tar.gz -C 25FYP --strip-components=1
+      echo "已通过压缩包下载源码"
+    else
+      echo "压缩包下载也失败，终止部署"
+      exit 1
+    fi
+  }
 else
   echo "更新仓库..."
   cd 25FYP
-  git pull 2>&1 | tee /tmp/git-pull.log || true
+  GIT_TERMINAL_PROMPT=0 git pull 2>&1 | tee /tmp/git-pull.log || true
   cd ..
 fi
 
@@ -163,12 +215,23 @@ cd 25FYP
 # 修复 Git 安全目录问题（如果存在）
 git config --global --add safe.directory /home/ubuntu/25FYP || true
 
+# 确保前端对外暴露 80 端口（与 ALB 前端 TG 一致）
+if [ -f docker-compose.prod.yml ]; then
+  sed -i 's/"8080:8080"/"80:8080"/g' docker-compose.prod.yml || true
+fi
+
+# 修复 ALLOWED_HOSTS：允许 ALB Host Header，避免后端返回 400 导致 TG 不健康
+if [ -f deploy/aws-deploy.sh ]; then
+  sed -i 's|ALLOWED_HOSTS=$${EC2_IP},$${EC2_HOSTNAME},localhost,127.0.0.1|ALLOWED_HOSTS=$${ALLOWED_HOSTS:-*}|g' deploy/aws-deploy.sh || true
+fi
+
 # 确保脚本可执行
 chmod +x ./deploy/aws-deploy.sh
 
 # 设置环境变量（非交互式部署）
 export DB_PASSWORD=Exam123456!
 export SECRET_KEY=$(openssl rand -base64 32)
+export ALLOWED_HOSTS='*'
 
 # 运行部署脚本（使用 nohup 在后台运行，避免超时）
 nohup bash ./deploy/aws-deploy.sh > /tmp/deploy.log 2>&1 &
@@ -242,11 +305,10 @@ resource "aws_lb_target_group" "fyp_backend_tg" {
 
   health_check {
     enabled             = true
-    healthy_threshold   = 2
     unhealthy_threshold = 3
     timeout             = 10
     interval            = 30
-    path                = "/api/health/"
+    path                = "/api/health/simple/"
     protocol            = "HTTP"
     matcher             = "200"
   }
@@ -383,6 +445,6 @@ resource "aws_db_subnet_group" "fyp_db" {
 # 方法2: 直接提供公钥内容 (public_key_content)
 resource "aws_key_pair" "fyp_key" {
   key_name   = var.key_pair_name
-  public_key = var.public_key_content != "" ? var.public_key_content : file(var.public_key_path)
+  public_key = var.public_key_content != "" ? var.public_key_content : file(pathexpand(var.public_key_path))
 }
 

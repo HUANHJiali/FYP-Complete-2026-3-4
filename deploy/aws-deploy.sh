@@ -165,6 +165,7 @@ services:
       bash -c "
       sleep 5 &&
       python manage.py migrate --noinput &&
+      (python manage.py init_data || echo '⚠️ 演示数据初始化失败，系统继续启动') &&
       python manage.py collectstatic --noinput &&
       gunicorn server.wsgi:application --bind 0.0.0.0:8000 --workers 2 --timeout 120
       "
@@ -244,6 +245,10 @@ fi
 echo -e "${YELLOW}开始构建镜像（这可能需要几分钟，请耐心等待）...${NC}"
 echo -e "${BLUE}提示: 已自动移除 mysqlclient，使用 pymysql 替代（避免编译慢）${NC}"
 
+echo -e "${YELLOW}清理旧 Docker 缓存（释放磁盘）...${NC}"
+docker system prune -af || true
+docker volume prune -f || true
+
 # 构建镜像（如果 timeout 命令可用，设置 30 分钟超时）
 if command -v timeout &> /dev/null; then
     timeout 1800 docker-compose -f docker-compose.prod.yml build --no-cache || {
@@ -265,7 +270,25 @@ else
 fi
 
 echo -e "${YELLOW}启动服务...${NC}"
-docker-compose -f docker-compose.prod.yml up -d
+MAX_UP_RETRIES=6
+UP_RETRY=0
+UP_OK=0
+while [ $UP_RETRY -lt $MAX_UP_RETRIES ]; do
+  if docker-compose -f docker-compose.prod.yml up -d; then
+    UP_OK=1
+    break
+  fi
+  UP_RETRY=$((UP_RETRY + 1))
+  echo -e "${YELLOW}启动服务失败（第 ${UP_RETRY}/${MAX_UP_RETRIES} 次），等待数据库健康后重试...${NC}"
+  docker-compose -f docker-compose.prod.yml ps || true
+  sleep 15
+done
+
+if [ $UP_OK -ne 1 ]; then
+  echo -e "${RED}多次尝试后服务仍启动失败，请检查日志${NC}"
+  docker-compose -f docker-compose.prod.yml logs --tail=200 || true
+  exit 1
+fi
 
 # 等待服务启动
 echo -e "${YELLOW}等待服务启动...${NC}"
@@ -283,12 +306,16 @@ sleep 10
 echo -e "${YELLOW}执行数据库迁移...${NC}"
 MAX_RETRIES=3
 RETRY_COUNT=0
+MIGRATION_OK=0
 
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-    if docker-compose -f docker-compose.prod.yml exec -T backend python manage.py migrate --noinput 2>&1 | tee /tmp/migrate.log; then
+  if docker-compose -f docker-compose.prod.yml exec -T backend python manage.py migrate --noinput > /tmp/migrate.log 2>&1; then
+    cat /tmp/migrate.log
         echo -e "${GREEN}数据库迁移成功${NC}"
+    MIGRATION_OK=1
         break
     else
+    cat /tmp/migrate.log
         if grep -q "already exists" /tmp/migrate.log; then
             echo -e "${YELLOW}检测到 migration 冲突，清空数据库重新迁移...${NC}"
             docker-compose -f docker-compose.prod.yml exec -T db mysql -uroot -p${DB_PASSWORD} -e "DROP DATABASE IF EXISTS db_exam; CREATE DATABASE db_exam CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;" 2>/dev/null || \
@@ -302,9 +329,41 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
     fi
 done
 
+    if [ $MIGRATION_OK -ne 1 ]; then
+      echo -e "${RED}迁移未成功，终止部署。${NC}"
+      exit 1
+    fi
+
 # 收集静态文件
 echo -e "${YELLOW}收集静态文件...${NC}"
 docker-compose -f docker-compose.prod.yml exec -T backend python manage.py collectstatic --noinput || true
+
+# 初始化演示数据（幂等，可重复执行）
+echo -e "${YELLOW}初始化演示数据...${NC}"
+INIT_DATA_RETRIES=${INIT_DATA_RETRIES:-3}
+INIT_DATA_OK=0
+for i in $(seq 1 "$INIT_DATA_RETRIES"); do
+  if docker-compose -f docker-compose.prod.yml exec -T backend python manage.py init_data; then
+    INIT_DATA_OK=1
+    echo -e "${GREEN}演示数据初始化成功（第 ${i} 次）${NC}"
+    break
+  fi
+  echo -e "${YELLOW}演示数据初始化失败（第 ${i}/${INIT_DATA_RETRIES} 次），5 秒后重试...${NC}"
+  sleep 5
+done
+
+if [ $INIT_DATA_OK -ne 1 ]; then
+  echo -e "${RED}演示数据初始化失败，终止部署。${NC}"
+  exit 1
+fi
+
+# 校验是否确实存在基础数据，避免“服务可用但无数据”
+USER_COUNT=$(docker-compose -f docker-compose.prod.yml exec -T backend python manage.py shell -c "from app import models; print(models.Users.objects.count())" 2>/dev/null | tail -n 1 | tr -d '\r')
+if ! [[ "$USER_COUNT" =~ ^[0-9]+$ ]] || [ "$USER_COUNT" -le 0 ]; then
+  echo -e "${RED}初始化后未检测到用户数据，终止部署。USER_COUNT=${USER_COUNT}${NC}"
+  exit 1
+fi
+echo -e "${GREEN}数据校验通过：Users=${USER_COUNT}${NC}"
 
 # 显示部署信息
 echo ""
