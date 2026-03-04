@@ -250,6 +250,23 @@ EOF
   }
 }
 
+# 单实例模式使用 Elastic IP，保证公网 IP 稳定
+resource "aws_eip" "fyp_single" {
+  count  = var.enable_ha ? 0 : 1
+  domain = "vpc"
+
+  tags = {
+    Name    = "fyp-single-eip"
+    Project = "FYP2025"
+  }
+}
+
+resource "aws_eip_association" "fyp_single" {
+  count         = var.enable_ha ? 0 : 1
+  instance_id   = aws_instance.fyp_backend[0].id
+  allocation_id = aws_eip.fyp_single[0].id
+}
+
 # 创建应用负载均衡器（高可用性）
 resource "aws_lb" "fyp_alb" {
   count = var.enable_ha ? 1 : 0
@@ -345,6 +362,38 @@ resource "aws_lb_listener" "fyp_main" {
   port              = "80"
   protocol          = "HTTP"
 
+  dynamic "default_action" {
+    for_each = var.acm_certificate_arn != "" ? [1] : []
+    content {
+      type = "redirect"
+
+      redirect {
+        port        = "443"
+        protocol    = "HTTPS"
+        status_code = "HTTP_301"
+      }
+    }
+  }
+
+  dynamic "default_action" {
+    for_each = var.acm_certificate_arn == "" ? [1] : []
+    content {
+      type             = "forward"
+      target_group_arn = aws_lb_target_group.fyp_frontend_tg[0].arn
+    }
+  }
+}
+
+# ALB HTTPS 监听器（可选：配置了 ACM 证书才启用）
+resource "aws_lb_listener" "fyp_https" {
+  count = var.enable_ha && var.acm_certificate_arn != "" ? 1 : 0
+
+  load_balancer_arn = aws_lb.fyp_alb[0].arn
+  port              = "443"
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+  certificate_arn   = var.acm_certificate_arn
+
   default_action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.fyp_frontend_tg[0].arn
@@ -353,9 +402,28 @@ resource "aws_lb_listener" "fyp_main" {
 
 # ALB 监听器规则：API 请求转发到后端
 resource "aws_lb_listener_rule" "fyp_api" {
-  count = var.enable_ha ? 1 : 0
+  count = var.enable_ha && var.acm_certificate_arn == "" ? 1 : 0
 
   listener_arn = aws_lb_listener.fyp_main[0].arn
+  priority     = 100
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.fyp_backend_tg[0].arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/api/*"]
+    }
+  }
+}
+
+# ALB HTTPS 监听器规则：API 请求转发到后端
+resource "aws_lb_listener_rule" "fyp_api_https" {
+  count = var.enable_ha && var.acm_certificate_arn != "" ? 1 : 0
+
+  listener_arn = aws_lb_listener.fyp_https[0].arn
   priority     = 100
 
   action {

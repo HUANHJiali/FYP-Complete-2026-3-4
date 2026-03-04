@@ -228,15 +228,35 @@
 /* 响应式设计 */
 @media (max-width: 480px) {
     .login-container {
-        padding: 10px;
+        padding: 12px;
+        max-width: 100%;
     }
     
     .login-card {
-        padding: 30px 20px;
+        padding: 24px 16px;
+        border-radius: 16px;
     }
     
     .login-header h2 {
-        font-size: 24px;
+        font-size: 22px;
+        line-height: 1.2;
+    }
+
+    .login-header p {
+        font-size: 13px;
+    }
+
+    .input-tip {
+        font-size: 11px;
+        line-height: 1.4;
+    }
+
+    .login-footer p {
+        font-size: 11px;
+    }
+
+    .login-btn {
+        letter-spacing: 1px;
     }
 }
 </style>

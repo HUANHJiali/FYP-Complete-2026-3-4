@@ -8,6 +8,10 @@ key_pair_name  = "fyp-keypair"
 # 高可用性配置
 enable_ha = true
 
+# HTTPS 配置（可选）
+# 配置 ACM 证书 ARN 后，会自动启用 ALB 443 监听，80 跳转到 443
+acm_certificate_arn = ""
+
 # RDS 配置（可选，需要额外预算）
 create_rds      = false
 rds_instance_class = "db.t2.micro"

@@ -130,6 +130,19 @@ docker-compose -f docker-compose.prod.yml logs -f
 - `ami_id`: Ubuntu AMI ID（默认: Ubuntu 22.04 LTS）
 - `enable_ha`: 是否启用高可用性（默认: `false`）
 - `aws_region`: AWS 区域（默认: `us-east-1`）
+- `acm_certificate_arn`: ACM 证书 ARN（配置后启用 ALB 443 HTTPS，80 自动跳转到 443）
+
+### HTTPS（ALB 443 + ACM）
+
+当你已有 ACM 证书时，可直接在变量中设置：
+
+```bash
+terraform apply -var="enable_ha=true" -var="acm_certificate_arn=arn:aws:acm:us-east-1:ACCOUNT_ID:certificate/xxxx"
+```
+
+行为说明：
+- 配置 `acm_certificate_arn` 后：创建 `443/HTTPS` 监听器，`80/HTTP` 自动 301 跳转到 443。
+- 未配置 `acm_certificate_arn` 时：保持当前 HTTP 行为（80 直连）。
 
 ## 验证部署
 

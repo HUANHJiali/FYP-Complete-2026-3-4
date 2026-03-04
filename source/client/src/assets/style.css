@@ -351,21 +351,13 @@ body {
 
 /* 响应式设计 */
 @media (max-width: 768px) {
-	.fater-layout-left {
-		width: 200px;
-	}
-	
 	.fater-header {
-		margin-left: 200px;
-	}
-	
-	.fater-header-logo {
-		width: 200px;
-		font-size: 16px;
+		margin-left: 0;
+		padding-left: 12px;
 	}
 	
 	.fater-layout-body {
-		left: 200px;
+		left: 0;
 		padding: 15px;
 	}
 	
@@ -374,6 +366,54 @@ body {
         height: calc(100vh - 120px);
         margin: 20px auto;
     }
+
+	.page-header {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 10px;
+	}
+
+	.search-section {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+
+	.search-section > * {
+		margin-right: 0 !important;
+		margin-left: 0 !important;
+	}
+
+	.search-section .ivu-input-wrapper,
+	.search-section .ivu-select,
+	.search-section .ivu-date-picker,
+	.search-section .ivu-cascader-rel,
+	.search-section .ivu-input-number {
+		width: 100% !important;
+		max-width: none !important;
+	}
+
+	.search-section .ivu-btn {
+		min-width: 88px;
+	}
+
+	.ivu-table-wrapper,
+	.ivu-table,
+	.ivu-table-body,
+	.ivu-table-header {
+		overflow-x: auto;
+	}
+}
+
+@media (max-width: 480px) {
+	.fater-layout-body {
+		padding: 10px;
+	}
+
+	.search-section .ivu-btn {
+		width: 100%;
+	}
 }
 
 /* 滚动条样式 */

@@ -46,6 +46,12 @@ variable "enable_ha" {
   default     = true
 }
 
+variable "acm_certificate_arn" {
+  description = "ACM 证书 ARN（配置后启用 ALB 443 HTTPS）"
+  type        = string
+  default     = ""
+}
+
 variable "create_rds" {
   description = "是否创建 RDS 数据库（需要额外预算）"
   type        = bool

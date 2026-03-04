@@ -96,3 +96,7 @@ htmlcov/
 
 # Client build
 source/client/dist/
+
+# Local packages / generated outputs
+*.tar.gz
+infrastructure/cdk/cdk.out/

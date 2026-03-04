@@ -17,6 +17,8 @@ tfplan.json
 aws-credentials
 *.pem
 *.key
+github_deploy_key
+github_deploy_key.pub
 set-env.ps1
 
 # Local debug/bootstrap artifacts

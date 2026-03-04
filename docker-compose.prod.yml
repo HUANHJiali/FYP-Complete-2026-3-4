@@ -88,32 +88,25 @@ services:
       retries: 3
       start_period: 40s
 
-  # Vue.js 前端服务（开发模式用于测试）
+  # Vue.js 前端服务（生产模式：静态文件 + Nginx）
   frontend:
     build:
       context: ./source/client
-      dockerfile: ../../docker/frontend/Dockerfile
+      dockerfile: ../../docker/frontend/Dockerfile.prod
     container_name: fyp_frontend_prod
     restart: always
     depends_on:
       - backend
-    environment:
-      # Docker 内 proxy 直接论求后端容器
-      - VUE_APP_BACKEND_URL=http://backend:8000
-      - NODE_ENV=development
-    volumes:
-      - ./source/client:/app
-      - /app/node_modules
     ports:
-      - "8080:8080"
+      - "80:80"
     networks:
       - fyp_network_prod
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/ >/dev/null 2>&1 || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost/ >/dev/null 2>&1 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 120s
+      start_period: 40s
 
 volumes:
   mysql_data_prod:

@@ -1,5 +1,5 @@
 <template>
-	<div class="fater-layout-left">
+	<div class="fater-layout-left" :class="{ 'mobile-drawer': isMobile, 'mobile-open': isMobile && isOpen }">
 		<div class="fater-header-logo">
 			<Icon type="ios-school" class="logo-icon" />
 			<span class="logo-text">在线考试管理系统</span>
@@ -11,6 +11,7 @@
 					:key="index"
 					:name="item.name"
 					:to="item.path"
+					@click="onMenuItemClick"
 					class="menu-item">
 					<Icon :type="item.icon" class="menu-icon" />
 					<span class="menu-text">{{ item.name }}</span>
@@ -23,7 +24,22 @@
 <script>
 export default{
     props: {
-        menuList: []
+        menuList: [],
+		isMobile: {
+			type: Boolean,
+			default: false
+		},
+		isOpen: {
+			type: Boolean,
+			default: false
+		}
+    },
+	methods: {
+		onMenuItemClick() {
+			if (this.isMobile) {
+				this.$emit('item-click');
+			}
+		}
     }
 }
 </script>
@@ -140,12 +156,19 @@ export default{
 
 /* 响应式设计 */
 @media (max-width: 768px) {
-	.fater-layout-left {
-		width: 200px;
+	.fater-layout-left.mobile-drawer {
+		width: 250px;
+		transform: translateX(-100%);
+		transition: transform 0.25s ease;
+		z-index: 1500;
+	}
+
+	.fater-layout-left.mobile-drawer.mobile-open {
+		transform: translateX(0);
 	}
 	
 	.fater-header-logo {
-		width: 200px;
+		width: 250px;
 		font-size: 14px;
 	}
 	
