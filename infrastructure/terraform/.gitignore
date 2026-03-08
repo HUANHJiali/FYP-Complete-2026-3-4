@@ -1,0 +1,29 @@
+# Terraform 文件
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+terraform.tfvars
+*.tfvars.backup
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+tfplan
+tfplan.json
+
+# AWS 凭证文件（敏感信息）
+aws-credentials
+*.pem
+*.key
+github_deploy_key
+github_deploy_key.pub
+set-env.ps1
+
+# Local debug/bootstrap artifacts
+.bin/
+.fyp_*
+.tmp_fyp_key*
+fyp_*_key*
+
