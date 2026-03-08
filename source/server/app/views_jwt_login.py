@@ -4,8 +4,6 @@ JWT登录方法的实现
 提供基于JWT的登录功能，同时保持向后兼容。
 此文件包含了新的login和exit方法实现，可以复制到app/views.py中使用。
 
-作者：Claude AI
-创建时间：2026-02-20
 """
 
 import uuid

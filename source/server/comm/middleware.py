@@ -8,8 +8,6 @@ JWT认证中间件
 1. 在settings.py中添加此中间件
 2. 在需要认证的视图函数中使用request.user_id
 
-作者：Claude AI
-创建时间：2026-02-20
 """
 
 from django.utils.deprecation import MiddlewareMixin

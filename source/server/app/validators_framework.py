@@ -24,8 +24,6 @@
     if not validator.is_valid():
         return validator.error_response()
 
-作者：Claude AI
-创建时间：2026-02-20
 """
 
 import re

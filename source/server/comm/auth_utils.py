@@ -10,8 +10,6 @@ JWT认证工具模块
 3. 刷新JWT token
 4. 从token中提取用户信息
 
-作者：Claude AI
-创建时间：2026-02-20
 """
 
 import jwt
