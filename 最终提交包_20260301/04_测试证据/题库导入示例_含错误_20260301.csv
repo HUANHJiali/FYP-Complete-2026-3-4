@@ -1,7 +1,0 @@
-name,type,answer,analyse,optionA,optionB,optionC,optionD,subjectId
-以下哪个是Python列表创建方式?,0,A,基础语法题,[],{},(),set(),1
-Python中用于定义函数的关键字?,fill,def,函数定义关键字,,,,,1
-布尔表达式 1 > 2 的结果是?,2,yes,判断题示例,,,,,1
-实现 add(a,b) 返回两数之和,3,def add(a,b): return a+b,简答/编程题示例,,,,,1
-这是一条非法题型示例,not_a_valid_type,abc,用于演示失败原因,,,,,1
-选择题但答案越界示例,0,E,答案越界应失败,A选项,B选项,C选项,D选项,1
