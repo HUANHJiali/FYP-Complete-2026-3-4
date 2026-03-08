@@ -20,6 +20,8 @@ wheels/
 .installed.cfg
 *.egg
 MANIFEST
+!infrastructure/cdk/lib/
+!infrastructure/cdk/lib/**
 *.env
 .venv
 env/
